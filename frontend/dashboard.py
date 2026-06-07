@@ -1,5 +1,12 @@
 # frontend/dashboard.py
+import sys
+import asyncio
 
+# Force Windows to use the Selector Event Loop to stop WebSocket drops (WinError 10054)
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+# --- IMPORTS ---
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -141,13 +148,12 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- REFRESH CONFIG ---
-# Autorefresh the dashboard every 2 seconds to poll FastAPI backend
 st_refresh = st_autorefresh(interval=2000, key="data_refresh_trigger")
 
 # --- DATA POLLING HELPERS ---
 def fetch_tweets():
     try:
-        response = requests.get(f"{BACKEND_URL}/api/tweets?limit=100")
+        response = requests.get(f"{BACKEND_URL}/api/tweets?limit=100", timeout=1.5)
         if response.status_code == 200:
             return response.json()
     except Exception:
@@ -156,7 +162,7 @@ def fetch_tweets():
 
 def fetch_alerts():
     try:
-        response = requests.get(f"{BACKEND_URL}/api/alerts")
+        response = requests.get(f"{BACKEND_URL}/api/alerts", timeout=1.5)
         if response.status_code == 200:
             return response.json()
     except Exception:
@@ -165,7 +171,7 @@ def fetch_alerts():
 
 def fetch_status():
     try:
-        response = requests.get(f"{BACKEND_URL}/api/status")
+        response = requests.get(f"{BACKEND_URL}/api/status", timeout=1.5)
         if response.status_code == 200:
             return response.json()
     except Exception:
@@ -175,7 +181,7 @@ def fetch_status():
 def trigger_injection(category, landmark, duration=30):
     try:
         payload = {"category": category, "landmark": landmark, "duration": duration}
-        response = requests.post(f"{BACKEND_URL}/api/inject", json=payload)
+        response = requests.post(f"{BACKEND_URL}/api/inject", json=payload, timeout=2.0)
         return response.status_code == 200
     except Exception as e:
         st.sidebar.error(f"Injection failed: {e}")
@@ -193,25 +199,24 @@ if status_data is None:
     st.info("""
     **To start the backend pipeline, please run the following command in a terminal:**
     ```powershell
-    .\\.venv\\Scripts\\python -m uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8000
+    python -m uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8000
     ```
     """)
     st.stop()
 
 # --- APP LAYOUT ---
-
-# Header section
 st.markdown("<div class='dashboard-title'>🛡️ AegisStream Crisis Intelligence</div>", unsafe_allow_html=True)
 st.markdown("<div class='dashboard-subtitle'>Real-Time Data Streaming & Spatial-Temporal Anomaly Detector</div>", unsafe_allow_html=True)
 
 # Metrics Grid
 m_col1, m_col2, m_col3, m_col4 = st.columns(4)
 
-active_cnt = len(alerts_data["active"])
-throughput = status_data["throughput_tps"]
-total_processed = status_data["total_tweets_processed"]
+# Safe extractions with defaults
+active_alerts = alerts_data.get("active", []) if isinstance(alerts_data, dict) else []
+active_cnt = len(active_alerts)
+throughput = status_data.get("throughput_tps", 0.0)
+total_processed = status_data.get("total_tweets_processed", 0)
 
-# Calculate dynamic alert state
 if active_cnt >= 3:
     status_label = "CRITICAL CRISIS ALERT"
     status_class = "metric-value-critical"
@@ -223,111 +228,82 @@ else:
     status_class = "metric-value-ok"
 
 with m_col1:
-    st.markdown(f"""
-    <div class='metric-box'>
-        <div style='font-size:0.75rem; color:#a0a0b0; text-transform:uppercase;'>System Alert Level</div>
-        <div class='{status_class}'>{status_label}</div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f"<div class='metric-box'><div style='font-size:0.75rem; color:#a0a0b0; text-transform:uppercase;'>System Alert Level</div><div class='{status_class}'>{status_label}</div></div>", unsafe_allow_html=True)
 
 with m_col2:
-    st.markdown(f"""
-    <div class='metric-box'>
-        <div style='font-size:0.75rem; color:#a0a0b0; text-transform:uppercase;'>Active Event Clusters</div>
-        <div class='metric-value-info'>{active_cnt}</div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f"<div class='metric-box'><div style='font-size:0.75rem; color:#a0a0b0; text-transform:uppercase;'>Active Event Clusters</div><div class='metric-value-info'>{active_cnt}</div></div>", unsafe_allow_html=True)
 
 with m_col3:
-    st.markdown(f"""
-    <div class='metric-box'>
-        <div style='font-size:0.75rem; color:#a0a0b0; text-transform:uppercase;'>Pipeline Throughput</div>
-        <div class='metric-value-info'>{throughput:.1f} <span style='font-size:0.9rem;'>tweets/s</span></div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f"<div class='metric-box'><div style='font-size:0.75rem; color:#a0a0b0; text-transform:uppercase;'>Pipeline Throughput</div><div class='metric-value-info'>{throughput:.1f} <span style='font-size:0.9rem;'>tweets/s</span></div></div>", unsafe_allow_html=True)
 
 with m_col4:
-    st.markdown(f"""
-    <div class='metric-box'>
-        <div style='font-size:0.75rem; color:#a0a0b0; text-transform:uppercase;'>Total Streams Processed</div>
-        <div class='metric-value-info'>{total_processed}</div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f"<div class='metric-box'><div style='font-size:0.75rem; color:#a0a0b0; text-transform:uppercase;'>Total Streams Processed</div><div class='metric-value-info'>{total_processed}</div></div>", unsafe_allow_html=True)
 
 st.write("")
 
-# Split Layout: Left (Map & Charts) / Right (Feed)
 col_left, col_right = st.columns([0.65, 0.35])
 
 with col_left:
-    st.markdown("### 🗺️ Spatio-Temporal Event Episenters")
+    st.markdown("### 🗺️ Spatio-Temporal Event Epicenters")
     
-    # Coordinates of tweets for scatter layer
     tweets_list = []
     for t in tweets_data:
-        if t["lat"] is not None and t["lon"] is not None:
-            # Color coding by category
-            cat = t["category"]
-            if cat == "Fire":
-                color = [231, 76, 60, 180] # Red
-            elif cat == "Flood":
-                color = [52, 152, 219, 180] # Blue
-            elif cat == "Civic Unrest":
-                color = [241, 196, 15, 180] # Yellow
-            elif cat == "Outbreak":
-                color = [155, 89, 182, 180] # Purple
-            else:
-                color = [46, 204, 113, 100] # Green (General)
+        if isinstance(t, dict) and t.get("lat") is not None and t.get("lon") is not None:
+            cat = t.get("category", "General")
+            if cat == "Fire": color = [231, 76, 60, 180]
+            elif cat == "Flood": color = [52, 152, 219, 180]
+            elif cat == "Civic Unrest": color = [241, 196, 15, 180]
+            elif cat == "Outbreak": color = [155, 89, 182, 180]
+            else: color = [46, 204, 113, 100]
                 
             tweets_list.append({
                 "lat": t["lat"],
                 "lon": t["lon"],
                 "category": cat,
-                "landmark": t["landmark"],
+                "landmark": t.get("landmark", "Unknown"),
                 "color": color
             })
             
     df_tweets = pd.DataFrame(tweets_list) if tweets_list else pd.DataFrame(columns=["lat", "lon", "category", "landmark", "color"])
     
-    # Active alerts coordinates for alert range rings
     alerts_list = []
-    for a in alerts_data["active"]:
-        alerts_list.append({
-            "lat": a["lat"],
-            "lon": a["lon"],
-            "category": a["category"],
-            "tweet_count": a["tweet_count"],
-            "z_score": a["z_score"]
-        })
-    df_alerts = pd.DataFrame(alerts_list) if alerts_list else pd.DataFrame(columns=["lat", "lon", "category", "tweet_count", "z_score"])
+    for a in active_alerts:
+        if isinstance(a, dict) and a.get("lat") is not None and a.get("lon") is not None:
+            alerts_list.append({
+                "lat": a["lat"],
+                "lon": a["lon"],
+                "category": a.get("category", "Alert"),
+                "tweet_count": a.get("tweet_count", 0),
+                "z_score": a.get("z_score", 0.0),
+                "landmark": a.get("landmark", "Detected Cluster")
+            })
+    df_alerts = pd.DataFrame(alerts_list) if alerts_list else pd.DataFrame(columns=["lat", "lon", "category", "tweet_count", "z_score", "landmark"])
     
-    # Pydeck Dark Maps configuration
     tweets_layer = pdk.Layer(
         "ScatterplotLayer",
         data=df_tweets,
         get_position="[lon, lat]",
         get_color="color",
-        get_radius=80,
+        get_radius=120,
         pickable=True
     )
     
-    # Glowing orange/red alert epicenters
     alerts_layer = pdk.Layer(
         "ScatterplotLayer",
         data=df_alerts,
         get_position="[lon, lat]",
-        get_color="[231, 76, 60, 60]", # Red glow fill
-        get_line_color="[231, 76, 60, 255]", # Solid red perimeter
+        get_color="[231, 76, 60, 60]",
+        get_line_color="[231, 76, 60, 255]",
         line_width_min_pixels=2,
-        get_radius=600, # 600m radius
+        get_radius=600,
         pickable=True
     )
     
     view_state = pdk.ViewState(
         latitude=51.5074,
         longitude=-0.1278,
-        zoom=11.8,
-        pitch=30
+        zoom=11.2,
+        pitch=20
     )
     
     tooltip = {
@@ -335,151 +311,132 @@ with col_left:
         "style": {"background-color": "#1f2833", "color": "#ffffff"}
     }
     
+    # Swapped style to carto-darkmatter to bypass private Mapbox token requirements
     st.pydeck_chart(
         pdk.Deck(
-            map_style="mapbox://styles/mapbox/dark-v10",
+            map_style="carto-darkmatter",
             initial_view_state=view_state,
             layers=[tweets_layer, alerts_layer],
             tooltip=tooltip
         )
     )
     
-    # Plotly Timeline and distributions
     st.markdown("### 📊 Real-Time Stream Analytics")
     c_chart1, c_chart2 = st.columns(2)
     
     with c_chart1:
         if len(tweets_data) > 0:
             df_chart = pd.DataFrame(tweets_data)
-            df_chart['datetime'] = pd.to_datetime(df_chart['timestamp'], unit='s')
-            df_chart['time_bin'] = df_chart['datetime'].dt.floor('10s') # 10s intervals
-            
-            # Count by interval and category
-            grouped = df_chart.groupby(['time_bin', 'category']).size().unstack(fill_value=0).reset_index()
-            
-            # Ensure columns present
-            for c in ["General", "Fire", "Flood", "Civic Unrest", "Outbreak"]:
-                if c not in grouped.columns:
-                    grouped[c] = 0
-                    
-            melted = grouped.melt(id_vars=['time_bin'], value_vars=["General", "Fire", "Flood", "Civic Unrest", "Outbreak"],
-                                  var_name='Category', value_name='Volume')
-            
-            fig_line = px.line(
-                melted,
-                x='time_bin',
-                y='Volume',
-                color='Category',
-                color_discrete_map={
-                    "General": "#2ecc71",
-                    "Fire": "#e74c3c",
-                    "Flood": "#3498db",
-                    "Civic Unrest": "#f1c40f",
-                    "Outbreak": "#9b59b6"
-                },
-                title="Historical Signal Trends (10s Bins)",
-                template="plotly_dark"
-            )
-            fig_line.update_layout(
-                margin=dict(l=10, r=10, t=30, b=10),
-                height=250,
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-            )
-            st.plotly_chart(fig_line, use_container_width=True)
-            
+            if 'timestamp' in df_chart.columns and 'category' in df_chart.columns:
+                df_chart['datetime'] = pd.to_datetime(df_chart['timestamp'], unit='s')
+                df_chart['time_bin'] = df_chart['datetime'].dt.floor('10s')
+                
+                grouped = df_chart.groupby(['time_bin', 'category']).size().unstack(fill_value=0).reset_index()
+                
+                for c in ["General", "Fire", "Flood", "Civic Unrest", "Outbreak"]:
+                    if c not in grouped.columns:
+                        grouped[c] = 0
+                        
+                melted = grouped.melt(id_vars=['time_bin'], value_vars=["General", "Fire", "Flood", "Civic Unrest", "Outbreak"],
+                                    var_name='Category', value_name='Volume')
+                
+                fig_line = px.line(
+                    melted, x='time_bin', y='Volume', color='Category',
+                    color_discrete_map={"General": "#2ecc71", "Fire": "#e74c3c", "Flood": "#3498db", "Civic Unrest": "#f1c40f", "Outbreak": "#9b59b6"},
+                    title="Historical Signal Trends (10s Bins)", template="plotly_dark"
+                )
+                fig_line.update_layout(margin=dict(l=10, r=10, t=30, b=10), height=250, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+                st.plotly_chart(fig_line, use_container_width=True)
+                
     with c_chart2:
         if len(tweets_data) > 0:
             df_cat = pd.DataFrame(tweets_data)
-            counts = df_cat['category'].value_counts().reset_index()
-            counts.columns = ['Category', 'Volume']
-            
-            fig_bar = px.bar(
-                counts,
-                x='Category',
-                y='Volume',
-                color='Category',
-                color_discrete_map={
-                    "General": "#2ecc71",
-                    "Fire": "#e74c3c",
-                    "Flood": "#3498db",
-                    "Civic Unrest": "#f1c40f",
-                    "Outbreak": "#9b59b6"
-                },
-                title="Total Stream Volume by Category",
-                template="plotly_dark"
-            )
-            fig_bar.update_layout(margin=dict(l=10, r=10, t=30, b=10), height=250, showlegend=False)
-            st.plotly_chart(fig_bar, use_container_width=True)
+            if 'category' in df_cat.columns:
+                counts = df_cat['category'].value_counts().reset_index()
+                counts.columns = ['Category', 'Volume']
+                
+                fig_bar = px.bar(
+                    counts, x='Category', y='Volume', color='Category',
+                    color_discrete_map={"General": "#2ecc71", "Fire": "#e74c3c", "Flood": "#3498db", "Civic Unrest": "#f1c40f", "Outbreak": "#9b59b6"},
+                    title="Total Stream Volume by Category", template="plotly_dark"
+                )
+                fig_bar.update_layout(margin=dict(l=10, r=10, t=30, b=10), height=250, showlegend=False)
+                st.plotly_chart(fig_bar, use_container_width=True)
 
 with col_right:
     st.markdown("### 🔔 Active Alerts Inbox")
-    if len(alerts_data["active"]) == 0:
+    if not active_alerts:
         st.info("No active crisis events detected.")
     else:
-        for a in alerts_data["active"]:
+        for a in active_alerts:
+            # Safely extract dynamic values with dictionary fallbacks
+            a_id = a.get('id', 'UNK')
+            a_cat = a.get('category', 'Unknown').upper()
+            a_lat = a.get('lat', 0.0)
+            a_lon = a.get('lon', 0.0)
+            a_vol = a.get('tweet_count', 0)
+            a_z = a.get('z_score', 0.0)
+            a_landmark = a.get('landmark', 'London Core')
+            a_time_raw = a.get('start_time', time.time())
+            a_time = time.strftime('%H:%M:%S', time.localtime(a_time_raw))
+            
             st.error(f"""
-            🔴 **{a['category'].upper()} ALERT ({a['id']})**
-            * **Epicenter:** {a['tweets'][0]['landmark']} (lat: {a['lat']:.4f}, lon: {a['lon']:.4f})
-            * **Volume:** {a['tweet_count']} clustered reports
-            * **Signal Z-score:** {a['z_score']:.2f} (anomaly threshold exceeded)
-            * **Active since:** {time.strftime('%H:%M:%S', time.localtime(a['start_time']))}
+            🔴 **{a_cat} ALERT ({a_id})**
+            * **Epicenter:** {a_landmark} (lat: {a_lat:.4f}, lon: {a_lon:.4f})
+            * **Volume:** {a_vol} clustered reports
+            * **Signal Z-score:** {a_z:.2f}
+            * **Active since:** {a_time}
             """)
             
     st.write("")
     
-    st.markdown("### 💬 Live Social media stream")
+    st.markdown("### 💬 Live Social Media Stream")
     feed_html = "<div class='feed-container'>"
     
     if len(tweets_data) == 0:
         feed_html += "<p style='color:#a0a0b0; font-size:0.85rem;'>Waiting for social media stream ingestion...</p>"
     else:
-        for t in tweets_data[:30]:  # Top 30 tweets
-            cat = t["category"]
-            badge_class = "badge-general"
-            if cat == "Fire":
-                badge_class = "badge-fire"
-            elif cat == "Flood":
-                badge_class = "badge-flood"
-            elif cat == "Civic Unrest":
-                badge_class = "badge-unrest"
-            elif cat == "Outbreak":
-                badge_class = "badge-outbreak"
+        for t in tweets_data[:30]:
+            if isinstance(t, dict):
+                cat = t.get("category", "General")
+                badge_class = "badge-general"
+                if cat == "Fire": badge_class = "badge-fire"
+                elif cat == "Flood": badge_class = "badge-flood"
+                elif cat == "Civic Unrest": badge_class = "badge-unrest"
+                elif cat == "Outbreak": badge_class = "badge-outbreak"
+                    
+                landmark = t.get("landmark", "London")
+                t_time = time.strftime("%H:%M:%S", time.localtime(t.get("timestamp", time.time())))
+                text = t.get("text", "")
                 
-            landmark = t["landmark"]
-            t_time = time.strftime("%H:%M:%S", time.localtime(t["timestamp"]))
-            
-            feed_html += f"""
-            <div class='tweet-card'>
-                <div class='tweet-header'>
-                    <span class='category-badge {badge_class}'>{cat.upper()}</span>
-                    <span class='landmark-tag'>📍 {landmark}</span>
-                    <span class='tweet-time'>{t_time}</span>
+                feed_html += f"""
+                <div class='tweet-card'>
+                    <div class='tweet-header'>
+                        <span class='category-badge {badge_class}'>{cat.upper()}</span>
+                        <span class='landmark-tag'>📍 {landmark}</span>
+                        <span class='tweet-time'>{t_time}</span>
+                    </div>
+                    <p class='tweet-text'>{text}</p>
                 </div>
-                <p class='tweet-text'>{t['text']}</p>
-            </div>
-            """
+                """
             
     feed_html += "</div>"
     st.markdown(feed_html, unsafe_allow_html=True)
 
-
 # --- SIDEBAR CONTROL PANEL ---
 st.sidebar.markdown("<h2 style='color:#66fcf1;'>⚙️ AegisStream Control Panel</h2>", unsafe_allow_html=True)
-st.sidebar.write(f"**Backend Status:** Operational (Uptime: {status_data['uptime_seconds']}s)")
-st.sidebar.write(f"**Simulated Queue Depth:** {status_data['raw_queue_depth']} raw posts")
+if status_data:
+    st.sidebar.write(f"**Backend Status:** Operational (Uptime: {status_data.get('uptime_seconds', 0)}s)")
+    st.sidebar.write(f"**Simulated Queue Depth:** {status_data.get('raw_queue_depth', 0)} raw posts")
 
 st.sidebar.divider()
-
-# Configuration Parameter Readouts
 st.sidebar.markdown("#### Analytics Engine Parameters")
-st.sidebar.markdown(f"- **DBSCAN Epsilon (Spatial):** `0.01` (~1.1 km)")
-st.sidebar.markdown(f"- **DBSCAN Min Samples:** `4` tweets")
-st.sidebar.markdown(f"- **ST-DBSCAN Temporal Window:** `3.0` minutes")
-st.sidebar.markdown(f"- **Anomaly Z-score Threshold:** `3.0` standard deviations")
+st.sidebar.markdown("- **DBSCAN Epsilon (Spatial):** `0.01` (~1.1 km)")
+st.sidebar.markdown("- **DBSCAN Min Samples:** `4` tweets")
+st.sidebar.markdown("- **ST-DBSCAN Temporal Window:** `3.0` minutes")
+st.sidebar.markdown("- **Anomaly Z-score Threshold:** `3.0` standard deviations")
 
 st.sidebar.divider()
-
-# Crisis Injector
 st.sidebar.markdown("### 🚀 Manual Crisis Injector")
 st.sidebar.write("Simulate a localized crisis signal event at a London landmark:")
 
@@ -499,8 +456,6 @@ if st.sidebar.button("🚨 Inject Crisis Event", use_container_width=True):
         st.sidebar.error("Failed to inject crisis event.")
 
 st.sidebar.divider()
-
-# Quick Presets
 st.sidebar.markdown("#### Test Presets")
 if st.sidebar.button("🔥 Fire at London Eye (30s)", use_container_width=True):
     if trigger_injection("Fire", "London Eye", 30):
