@@ -33,7 +33,7 @@ st.markdown("""
     /* Dark dashboard theme styling */
     .stApp {
         background-color: #0b0c10;
-        color: #c5c6c7;
+        color: #e0e6ed; /* Brightened default text from #c5c6c7 */
     }
     
     /* Title header style */
@@ -43,7 +43,7 @@ st.markdown("""
         font-weight: 800;
         font-size: 2.2rem;
         margin-bottom: 0px;
-        text-shadow: 0 0 10px rgba(102, 252, 241, 0.3);
+        text-shadow: 0 0 15px rgba(102, 252, 241, 0.5); /* Boosted glow contrast */
     }
     
     .dashboard-subtitle {
@@ -51,7 +51,7 @@ st.markdown("""
         font-size: 0.95rem;
         margin-top: 0px;
         margin-bottom: 20px;
-        opacity: 0.8;
+        opacity: 0.95; /* Increased opacity to remove fog */
     }
     
     /* Scrollable feed container */
@@ -67,7 +67,7 @@ st.markdown("""
         padding: 12px;
         margin-bottom: 10px;
         background-color: #1f2833;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
         transition: transform 0.2s ease;
     }
     .tweet-card:hover {
@@ -101,13 +101,13 @@ st.markdown("""
     }
     
     .tweet-time {
-        color: #a0a0b0;
+        color: #b0b0c8; /* Lightened time stamps */
         font-size: 0.72rem;
     }
     
     .tweet-text {
         margin: 0;
-        color: #e0e0e0;
+        color: #ffffff; /* Forced pure white text inside cards for ultra-clarity */
         font-size: 0.82rem;
         line-height: 1.35;
     }
@@ -118,31 +118,39 @@ st.markdown("""
         border-radius: 8px;
         padding: 15px;
         text-align: center;
-        border: 1px solid #1f2833;
+        border: 1px solid #2d3748; /* Accent border added to cleanly outline metric containers */
     }
     .metric-value-critical {
-        color: #e74c3c;
+        color: #ff4d4d; /* Brightened alert red */
         font-size: 2rem;
         font-weight: bold;
-        text-shadow: 0 0 10px rgba(231, 76, 60, 0.3);
+        text-shadow: 0 0 12px rgba(255, 77, 77, 0.4);
     }
     .metric-value-warning {
-        color: #f1c40f;
+        color: #ffd43b; /* High contrast warning yellow */
         font-size: 2rem;
         font-weight: bold;
-        text-shadow: 0 0 10px rgba(241, 196, 15, 0.3);
+        text-shadow: 0 0 12px rgba(255, 212, 59, 0.4);
     }
     .metric-value-ok {
         color: #2ecc71;
         font-size: 2rem;
         font-weight: bold;
-        text-shadow: 0 0 10px rgba(46, 204, 113, 0.3);
+        text-shadow: 0 0 12px rgba(46, 204, 113, 0.4);
     }
     .metric-value-info {
         color: #66fcf1;
         font-size: 2rem;
         font-weight: bold;
-        text-shadow: 0 0 10px rgba(102, 252, 241, 0.3);
+        text-shadow: 0 0 12px rgba(102, 252, 241, 0.4);
+    }
+
+    /* CSS Overrides to pierce through Streamlit native grey markdown and force clear text */
+    .stMarkdown div p {
+        color: #ffffff !important; 
+    }
+    .stMarkdown div li {
+        color: #f7fafc !important; /* Makes bullet details inside active alerts crystal clear */
     }
 </style>
 """, unsafe_allow_html=True)
@@ -228,16 +236,16 @@ else:
     status_class = "metric-value-ok"
 
 with m_col1:
-    st.markdown(f"<div class='metric-box'><div style='font-size:0.75rem; color:#a0a0b0; text-transform:uppercase;'>System Alert Level</div><div class='{status_class}'>{status_label}</div></div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='metric-box'><div style='font-size:0.75rem; color:#b0b0c8; text-transform:uppercase; font-weight:600;'>System Alert Level</div><div class='{status_class}'>{status_label}</div></div>", unsafe_allow_html=True)
 
 with m_col2:
-    st.markdown(f"<div class='metric-box'><div style='font-size:0.75rem; color:#a0a0b0; text-transform:uppercase;'>Active Event Clusters</div><div class='metric-value-info'>{active_cnt}</div></div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='metric-box'><div style='font-size:0.75rem; color:#b0b0c8; text-transform:uppercase; font-weight:600;'>Active Event Clusters</div><div class='metric-value-info'>{active_cnt}</div></div>", unsafe_allow_html=True)
 
 with m_col3:
-    st.markdown(f"<div class='metric-box'><div style='font-size:0.75rem; color:#a0a0b0; text-transform:uppercase;'>Pipeline Throughput</div><div class='metric-value-info'>{throughput:.1f} <span style='font-size:0.9rem;'>tweets/s</span></div></div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='metric-box'><div style='font-size:0.75rem; color:#b0b0c8; text-transform:uppercase; font-weight:600;'>Pipeline Throughput</div><div class='metric-value-info'>{throughput:.1f} <span style='font-size:0.9rem;'>tweets/s</span></div></div>", unsafe_allow_html=True)
 
 with m_col4:
-    st.markdown(f"<div class='metric-box'><div style='font-size:0.75rem; color:#a0a0b0; text-transform:uppercase;'>Total Streams Processed</div><div class='metric-value-info'>{total_processed}</div></div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='metric-box'><div style='font-size:0.75rem; color:#b0b0c8; text-transform:uppercase; font-weight:600;'>Total Streams Processed</div><div class='metric-value-info'>{total_processed}</div></div>", unsafe_allow_html=True)
 
 st.write("")
 
@@ -311,13 +319,14 @@ with col_left:
         "style": {"background-color": "#1f2833", "color": "#ffffff"}
     }
     
-    # Swapped style to carto-darkmatter to bypass private Mapbox token requirements
+   # --- UPDATED HIGH-VISIBILITY MAP LAYOUT ---
     st.pydeck_chart(
         pdk.Deck(
-            map_style="carto-darkmatter",
+            map_style="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
             initial_view_state=view_state,
             layers=[tweets_layer, alerts_layer],
-            tooltip=tooltip
+            tooltip=tooltip,
+            height=500  # Forces the canvas container to expand and render the tiles
         )
     )
     
@@ -369,7 +378,6 @@ with col_right:
         st.info("No active crisis events detected.")
     else:
         for a in active_alerts:
-            # Safely extract dynamic values with dictionary fallbacks
             a_id = a.get('id', 'UNK')
             a_cat = a.get('category', 'Unknown').upper()
             a_lat = a.get('lat', 0.0)
@@ -394,7 +402,7 @@ with col_right:
     feed_html = "<div class='feed-container'>"
     
     if len(tweets_data) == 0:
-        feed_html += "<p style='color:#a0a0b0; font-size:0.85rem;'>Waiting for social media stream ingestion...</p>"
+        feed_html += "<p style='color:#b0b0c8; font-size:0.85rem;'>Waiting for social media stream ingestion...</p>"
     else:
         for t in tweets_data[:30]:
             if isinstance(t, dict):
