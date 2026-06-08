@@ -319,19 +319,44 @@ with col_left:
         "style": {"background-color": "#1f2833", "color": "#ffffff"}
     }
     
-   # --- UPDATED HIGH-VISIBILITY MAP LAYOUT ---
+    # --- HIGH-VISIBILITY MAP LAYOUT ---
     st.pydeck_chart(
         pdk.Deck(
             map_style="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
             initial_view_state=view_state,
             layers=[tweets_layer, alerts_layer],
             tooltip=tooltip,
-            height=500  # Forces the canvas container to expand and render the tiles
+            height=500  
         )
     )
     
+    # --- CRISP REAL-TIME STREAM ANALYTICS CHARTS ---
     st.markdown("### 📊 Real-Time Stream Analytics")
     c_chart1, c_chart2 = st.columns(2)
+    
+    # Updated Base Theme Configurations to pierce through fog overrides
+    plotly_layout_theme = dict(
+        template="plotly_dark",         # Explicitly sets native dark template base
+        paper_bgcolor='#1f2833',        # Match standard structural widget card layout
+        plot_bgcolor='#1a222d',         # Slightly deeper block layout background
+        font=dict(color='#ffffff', family='Outfit, sans-serif'), # Forcing crisp white fonts
+        title=dict(
+            font=dict(size=15, color='#66fcf1', weight='bold'),
+            y=0.93,
+            yref='container',
+            x=0.05
+        ),
+        xaxis=dict(
+            gridcolor='#2d3748', 
+            linecolor='#45f3ff', 
+            tickfont=dict(color='#e0e6ed', size=11)
+        ),
+        yaxis=dict(
+            gridcolor='#2d3748', 
+            linecolor='#45f3ff', 
+            tickfont=dict(color='#e0e6ed', size=11)
+        )
+    )
     
     with c_chart1:
         if len(tweets_data) > 0:
@@ -352,10 +377,25 @@ with col_left:
                 fig_line = px.line(
                     melted, x='time_bin', y='Volume', color='Category',
                     color_discrete_map={"General": "#2ecc71", "Fire": "#e74c3c", "Flood": "#3498db", "Civic Unrest": "#f1c40f", "Outbreak": "#9b59b6"},
-                    title="Historical Signal Trends (10s Bins)", template="plotly_dark"
+                    title="Historical Signal Trends (10s Bins)",
+                    labels={"time_bin": "Timeline (System Time)", "Volume": "Incoming Posts/s"}
                 )
-                fig_line.update_layout(margin=dict(l=10, r=10, t=30, b=10), height=250, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
-                st.plotly_chart(fig_line, use_container_width=True)
+                fig_line.update_layout(
+                    plotly_layout_theme,
+                    margin=dict(l=40, r=20, t=85, b=40), 
+                    height=360, 
+                    legend=dict(
+                        orientation="h", 
+                        yanchor="top", 
+                        y=0.88, 
+                        xanchor="left", 
+                        x=0.05,
+                        font=dict(size=10, color='#ffffff'),
+                        bgcolor='rgba(0,0,0,0)'
+                    )
+                )
+                # Disabling the automatic streamlit theme completely prevents fog degradation
+                st.plotly_chart(fig_line, use_container_width=True, theme=None)
                 
     with c_chart2:
         if len(tweets_data) > 0:
@@ -367,10 +407,16 @@ with col_left:
                 fig_bar = px.bar(
                     counts, x='Category', y='Volume', color='Category',
                     color_discrete_map={"General": "#2ecc71", "Fire": "#e74c3c", "Flood": "#3498db", "Civic Unrest": "#f1c40f", "Outbreak": "#9b59b6"},
-                    title="Total Stream Volume by Category", template="plotly_dark"
+                    title="Total Stream Volume by Category",
+                    labels={"Category": "Crisis Sector", "Volume": "Total Ingested Messages"}
                 )
-                fig_bar.update_layout(margin=dict(l=10, r=10, t=30, b=10), height=250, showlegend=False)
-                st.plotly_chart(fig_bar, use_container_width=True)
+                fig_bar.update_layout(
+                    plotly_layout_theme,
+                    margin=dict(l=40, r=20, t=85, b=40), 
+                    height=360, 
+                    showlegend=False
+                )
+                st.plotly_chart(fig_bar, use_container_width=True, theme=None)
 
 with col_right:
     st.markdown("### 🔔 Active Alerts Inbox")
