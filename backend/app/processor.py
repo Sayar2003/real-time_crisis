@@ -23,9 +23,10 @@ except ImportError:
 
 def clean_text(text: str) -> str:
     """Cleans raw text by removing links, special characters, and extra spaces."""
-    text = re.sub(r"http\S+|www\S+|https\S+", "", text, flags=re.MULTILINE) # remove URLs
-    text = re.sub(r"@\w+", "", text) # remove mentions
-    text = re.sub(r"\s+", " ", text).strip() # normalize whitespace
+    text = re.sub(r"http\S+|www\S+|https\S+", "", text, flags=re.MULTILINE)
+    text = re.sub(r"@\w+", "", text)
+    text = re.sub(r"#(\w+)", r"\1", text)  # #FloodAlert → FloodAlert (keep the word)
+    text = re.sub(r"\s+", " ", text).strip()
     return text
 
 def geocode_tweet(text: str) -> Tuple[Optional[float], Optional[float], Optional[str]]:
@@ -38,9 +39,12 @@ def geocode_tweet(text: str) -> Tuple[Optional[float], Optional[float], Optional
     
     # 1. Direct Keyword Matching (Primary & extremely accurate for configuration landmarks)
     for landmark, coords in LANDMARKS.items():
-        if landmark in text_lower:
+        landmark_words = set(landmark.lower().split())
+        text_words = set(re.findall(r"\w+", text_lower))
+        # Must share at least one full word — prevents "eye" matching "london eye"
+        if landmark_words & text_words:
             return coords[0], coords[1], landmark.title()
-            
+
     # 2. spaCy Named Entity Recognition fallback
     global nlp
     if nlp is not None:
@@ -58,17 +62,28 @@ def geocode_tweet(text: str) -> Tuple[Optional[float], Optional[float], Optional
             
     return None, None, None
 
+# Maximum distance in degrees to assign a landmark (~5.5 km)
+MAX_LANDMARK_DISTANCE = 0.05
+
 def get_nearest_landmark(lat: float, lon: float) -> str:
-    """Returns the name of the closest landmark to the given coordinates."""
+    """
+    Returns the name of the closest landmark to the given coordinates.
+    Returns 'Unknown Location' if no landmark is within MAX_LANDMARK_DISTANCE.
+    """
     min_dist = float('inf')
-    closest = "London"
+    closest = "Unknown Location"
+
     for landmark, coords in LANDMARKS.items():
-        # Using Euclidean distance as coordinates are localized in London
         dist = math.sqrt((lat - coords[0])**2 + (lon - coords[1])**2)
         if dist < min_dist:
             min_dist = dist
             closest = landmark.title()
-    return closest
+
+    # Only return the landmark if it's within the threshold distance
+    if min_dist <= MAX_LANDMARK_DISTANCE:
+        return closest
+
+    return "Unknown Location"
 
 class CrisisClassifier:
     """A lightweight text classifier trained on synthetic crisis text at startup."""

@@ -74,6 +74,17 @@ class AnalyticsEngine:
         self.resolved_alerts: List[dict] = []
         self.alert_id_counter = 1
 
+def _extract_landmark(self, cluster_tweets: list) -> str:
+    """Returns the most common landmark mentioned across cluster tweets."""
+    landmarks = [
+        t.get("landmark", "") 
+        for t in cluster_tweets 
+        if t.get("landmark", "") not in ("", "Unknown", None)
+    ]
+    if not landmarks:
+        return "Unknown Location"
+    return max(set(landmarks), key=landmarks.count)
+
     def run_analytics(self, rolling_tweets: List[dict]) -> Tuple[List[dict], List[dict]]:
         """
         Executes ST-DBSCAN clustering and Z-score anomaly check.
@@ -167,28 +178,31 @@ class AnalyticsEngine:
                     alert["tweet_count"] = count
                     alert["tweets"] = cluster_tweets
                     alert["z_score"] = z_score
+                    alert["landmark"] = self._extract_landmark(cluster_tweets)  # ← add this line
                     alert["last_updated"] = current_time
                     matched_alert_ids.add(matched_id)
                 else:
-                    # Create new alert
-                    alert_id = f"ALERT-{self.alert_id_counter}"
-                    self.alert_id_counter += 1
-                    
-                    self.active_alerts[alert_id] = {
-                        "id": alert_id,
-                        "category": category,
-                        "lat": lat,
-                        "lon": lon,
-                        "tweet_count": count,
-                        "tweets": cluster_tweets,
-                        "z_score": z_score,
-                        "status": "Active",
-                        "start_time": current_time,
-                        "last_updated": current_time
-                    }
-                    matched_alert_ids.add(alert_id)
-                    logger.info(f"🚨 NEW ALERT RAISED: {alert_id} ({category}) at ({lat:.4f}, {lon:.4f}) with Z-score {z_score:.2f}")
+                  # Create new alert
+                  alert_id = f"ALERT-{self.alert_id_counter}"
+                  self.alert_id_counter += 1
 
+                  landmark = self._extract_landmark(cluster_tweets)
+
+                  self.active_alerts[alert_id] = {
+                  "id": alert_id,
+                  "category": category,
+                  "lat": lat,
+                  "lon": lon,
+                  "tweet_count": count,
+                  "tweets": cluster_tweets,
+                  "z_score": z_score,
+                  "landmark": landmark,
+                  "status": "Active",
+                  "start_time": current_time,
+                  "last_updated": current_time
+                }
+                matched_alert_ids.add(alert_id)
+                logger.info(f"🚨 NEW ALERT RAISED: {alert_id} ({category}) at ({lat:.4f}, {lon:.4f}) | Landmark: {landmark} | Z-score {z_score:.2f}")
         # 4. Handle timeouts and resolve inactive alerts
         resolved_keys = []
         for aid, alert in list(self.active_alerts.items()):

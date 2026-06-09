@@ -99,109 +99,109 @@ async def simulation_worker():
     logger.info("Ingestion Simulator started.")
     try:
         while True:
-            # Generate next simulated tweet
-            raw_tweet = generate_next_tweet()
-            await raw_queue.put(raw_tweet)
-            
-            # Sleep to match ingestion rate
-            await asyncio.sleep(1.0 / SIMULATION_TWEET_RATE)
+            try:
+                raw_tweet = generate_next_tweet()
+                await raw_queue.put(raw_tweet)
+                await asyncio.sleep(1.0 / SIMULATION_TWEET_RATE)
+            except Exception as e:
+                logger.error(f"Error generating tweet: {e}", exc_info=True)
+                await asyncio.sleep(1.0)  # brief pause then continue
     except asyncio.CancelledError:
         logger.info("Ingestion Simulator stopping.")
-    except Exception as e:
-        logger.error(f"Error in Ingestion Simulator: {e}")
 
 
 async def processing_worker():
     """Consumes raw tweets, cleans, geocodes, classifies, and puts to processed queue."""
     global total_processed_count
     classifier = get_classifier()
-    
+
     logger.info("Stream Processor started.")
     try:
         while True:
-            raw_tweet = await raw_queue.get()
-            
-            # 1. Clean Text
-            text = raw_tweet["text"]
-            cleaned_text = clean_text(text)
-            
-            # 2. Classify Category
-            category = classifier.predict(cleaned_text)
-            
-            # 3. Geocode (NER or geotag matching)
-            lat = raw_tweet["lat"]
-            lon = raw_tweet["lon"]
-            resolved_landmark = "Unknown"
-            
-            if lat is not None and lon is not None:
-                # Tweet had active geotag, resolve closest landmark for metadata
-                resolved_landmark = get_nearest_landmark(lat, lon)
-            else:
-                # Perform NER geocoding from text
-                nlp_lat, nlp_lon, landmark_name = geocode_tweet(text)
-                if nlp_lat is not None and nlp_lon is not None:
-                    lat = nlp_lat
-                    lon = nlp_lon
-                    resolved_landmark = landmark_name
-            
-            # 4. Enrich tweet dictionary
-            processed_tweet = {
-                "id": raw_tweet["id"],
-                "text": text,
-                "cleaned_text": cleaned_text,
-                "timestamp": raw_tweet["timestamp"],
-                "category": category,
-                "lat": lat,
-                "lon": lon,
-                "landmark": resolved_landmark,
-                "geotagged": raw_tweet["geotagged"] or (lat is not None)
-            }
-            
-            # 5. Append to recent tweets list (keep last 1000 items)
-            tweets_db.append(processed_tweet)
-            if len(tweets_db) > 1000:
-                tweets_db.pop(0)
-                
-            total_processed_count += 1
-            
-            # 6. Push to processed queue for analytics
-            await processed_queue.put(processed_tweet)
-            
-            raw_queue.task_done()
+            try:
+                raw_tweet = await raw_queue.get()
+
+                # 1. Clean Text
+                text = raw_tweet["text"]
+                cleaned_text = clean_text(text)
+
+                # 2. Classify Category
+                category = classifier.predict(cleaned_text)
+
+                # 3. Geocode (NER or geotag matching)
+                lat = raw_tweet["lat"]
+                lon = raw_tweet["lon"]
+                resolved_landmark = "Unknown"
+
+                if lat is not None and lon is not None:
+                    resolved_landmark = get_nearest_landmark(lat, lon)
+                else:
+                    nlp_lat, nlp_lon, landmark_name = geocode_tweet(text)
+                    if nlp_lat is not None and nlp_lon is not None:
+                        lat = nlp_lat
+                        lon = nlp_lon
+                        resolved_landmark = landmark_name
+
+                # 4. Enrich tweet dictionary
+                processed_tweet = {
+                    "id": raw_tweet["id"],
+                    "text": text,
+                    "cleaned_text": cleaned_text,
+                    "timestamp": raw_tweet["timestamp"],
+                    "category": category,
+                    "lat": lat,
+                    "lon": lon,
+                    "landmark": resolved_landmark,
+                    "geotagged": raw_tweet["geotagged"] or (lat is not None)
+                }
+
+                # 5. Append to recent tweets list
+                tweets_db.append(processed_tweet)
+                if len(tweets_db) > 1000:
+                    tweets_db.pop(0)
+
+                total_processed_count += 1
+
+                # 6. Push to processed queue for analytics
+                await processed_queue.put(processed_tweet)
+                raw_queue.task_done()
+
+            except Exception as e:
+                logger.error(f"Failed to process tweet: {e}", exc_info=True)
+                await asyncio.sleep(0.1)  # brief pause then continue
     except asyncio.CancelledError:
         logger.info("Stream Processor stopping.")
-    except Exception as e:
-        logger.error(f"Error in Stream Processor: {e}")
 
 
 async def analytics_worker():
-    """Periodically consumes processed tweets, manages rolling window, and clusters/detects alerts."""
+    """Periodically consumes processed tweets, manages rolling window, and runs clustering."""
     global active_alerts, resolved_alerts
     rolling_window: List[dict] = []
-    
+
     logger.info("Analytics Engine worker started.")
     try:
         while True:
-            # Run analytics check every 3 seconds
-            await asyncio.sleep(3.0)
-            
-            # 1. Drain all processed items currently in queue
-            while not processed_queue.empty():
-                processed_tweet = await processed_queue.get()
-                rolling_window.append(processed_tweet)
-                processed_queue.task_done()
-                
-            # 2. Prune rolling window to only keep items from the last ROLLING_WINDOW_MINUTES
-            cutoff_time = time.time() - (ROLLING_WINDOW_MINUTES * 60)
-            rolling_window = [t for t in rolling_window if t["timestamp"] >= cutoff_time]
-            
-            # 3. Run spatial clustering and anomaly calculations
-            active_alerts, resolved_alerts = analytics_engine.run_analytics(rolling_window)
-            
+            try:
+                await asyncio.sleep(3.0)
+
+                # 1. Drain all processed items currently in queue
+                while not processed_queue.empty():
+                    processed_tweet = await processed_queue.get()
+                    rolling_window.append(processed_tweet)
+                    processed_queue.task_done()
+
+                # 2. Prune rolling window
+                cutoff_time = time.time() - (ROLLING_WINDOW_MINUTES * 60)
+                rolling_window = [t for t in rolling_window if t["timestamp"] >= cutoff_time]
+
+                # 3. Run clustering and anomaly detection
+                active_alerts, resolved_alerts = analytics_engine.run_analytics(rolling_window)
+
+            except Exception as e:
+                logger.error(f"Error in Analytics Engine: {e}", exc_info=True)
+                await asyncio.sleep(1.0)  # brief pause then continue
     except asyncio.CancelledError:
         logger.info("Analytics Engine worker stopping.")
-    except Exception as e:
-        logger.error(f"Error in Analytics Engine: {e}")
 
 
 # --- REST API ENDPOINTS ---
