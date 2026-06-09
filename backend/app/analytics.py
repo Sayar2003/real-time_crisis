@@ -3,6 +3,7 @@
 import time
 import logging
 import math
+from collections import deque
 from typing import List, Dict, Tuple, Optional
 import numpy as np
 from sklearn.cluster import DBSCAN
@@ -25,45 +26,51 @@ class AnomalyTracker:
     def __init__(self, window_size: int = HISTORICAL_WINDOW_MINUTES):
         self.window_size = window_size
         # Initialize history for each crisis category with zeros
-        self.history: Dict[str, List[int]] = {cat: [0] * window_size for cat in CRISIS_CATEGORIES}
+        self.history: Dict[str, deque] = {
+        cat: deque([0] * window_size, maxlen=window_size)
+        for cat in CRISIS_CATEGORIES
+   }
         self.last_bin_time = time.time()
 
     def update(self, tweets: List[dict]):
         """Updates the historical bins. Slides the window if a minute has passed."""
         now = time.time()
         elapsed = now - self.last_bin_time
-        
+
         if elapsed >= 60.0:
-            bins_to_slide = int(elapsed // 60.0)
-            self.last_bin_time = now
-            
-            # Compute tweet count in the last 60 seconds for each category
+            bins_to_slide = min(int(elapsed // 60.0), self.window_size)
+            # advance last_bin_time by the number of whole minutes slid
+            self.last_bin_time += bins_to_slide * 60.0
+
             for cat in CRISIS_CATEGORIES:
                 recent_count = sum(
-                    1 for t in tweets 
+                    1 for t in tweets
                     if t.get("category") == cat and now - t.get("timestamp", 0) <= 60.0
                 )
-                
-                # Slide the history list
-                for _ in range(min(bins_to_slide, self.window_size)):
-                    self.history[cat].pop(0)
-                    self.history[cat].append(recent_count)
+
+                # Fill missed bins with zeros, append current count last
+                for i in range(bins_to_slide):
+                    if i < bins_to_slide - 1:
+                        self.history[cat].append(0)       # missed bins = no activity
+                    else:
+                        self.history[cat].append(recent_count)  # current bin
+                # deque(maxlen) auto-drops oldest — no pop(0) needed
 
     def calculate_z_score(self, category: str, count: int) -> float:
-        """Calculates the Z-score for a given count against historical category volume."""
         if category not in self.history:
             return 0.0
-            
-        counts = self.history[category]
+
+        counts = list(self.history[category])
+
+        # Require at least 5 non-zero bins before trusting the baseline
+        # Prevents false alerts firing immediately on cold start
+        non_zero_bins = sum(1 for c in counts if c > 0)
+        if non_zero_bins < 5:
+            return 0.0
+
         mean = np.mean(counts)
-        std = np.std(counts)
-        
-        # If std is 0 (no historical events), default to 1.0 to avoid division by zero
-        if std < 0.1:
-            std = 1.0
-            
-        z = (count - mean) / std
-        return float(z)
+        std = max(np.std(counts), 0.5)   # floor at 0.5 to avoid division by near-zero
+        return float((count - mean) / std)
 
 
 class AnalyticsEngine:
@@ -73,17 +80,16 @@ class AnalyticsEngine:
         self.active_alerts: Dict[str, dict] = {}
         self.resolved_alerts: List[dict] = []
         self.alert_id_counter = 1
-
-def _extract_landmark(self, cluster_tweets: list) -> str:
-    """Returns the most common landmark mentioned across cluster tweets."""
-    landmarks = [
-        t.get("landmark", "") 
-        for t in cluster_tweets 
-        if t.get("landmark", "") not in ("", "Unknown", None)
-    ]
-    if not landmarks:
-        return "Unknown Location"
-    return max(set(landmarks), key=landmarks.count)
+    def _extract_landmark(self, cluster_tweets: list) -> str:
+        """Returns the most common landmark mentioned across cluster tweets."""
+        landmarks = [
+            t.get("landmark", "") 
+            for t in cluster_tweets 
+            if t.get("landmark", "") not in ("", "Unknown", None)
+        ]
+        if not landmarks:
+            return "Unknown Location"
+        return max(set(landmarks), key=landmarks.count)
 
     def run_analytics(self, rolling_tweets: List[dict]) -> Tuple[List[dict], List[dict]]:
         """

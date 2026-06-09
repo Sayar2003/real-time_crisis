@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import time
+from collections import deque
 from contextlib import asynccontextmanager
 from typing import List, Optional
 from fastapi import FastAPI, HTTPException, Query
@@ -27,7 +28,8 @@ raw_queue = asyncio.Queue()
 processed_queue = asyncio.Queue()
 
 # In-memory database of processed tweets (thread-safe operations in asyncio single loop)
-tweets_db: List[dict] = []
+# In-memory database of processed tweets — deque auto-drops oldest at maxlen
+tweets_db: deque = deque(maxlen=1000)
 active_alerts: List[dict] = []
 resolved_alerts: List[dict] = []
 
@@ -156,9 +158,8 @@ async def processing_worker():
                 }
 
                 # 5. Append to recent tweets list
+                # 5. Append to recent tweets list (deque auto-drops oldest when maxlen reached)
                 tweets_db.append(processed_tweet)
-                if len(tweets_db) > 1000:
-                    tweets_db.pop(0)
 
                 total_processed_count += 1
 
@@ -211,11 +212,11 @@ async def get_tweets(
     limit: int = Query(50, ge=1, le=200),
     category: Optional[str] = None
 ):
-    """Returns list of recent processed tweets."""
-    filtered_tweets = tweets_db
+    """Returns list of recent processed tweets, newest first."""
+    all_tweets = list(tweets_db)
     if category:
-        filtered_tweets = [t for t in filtered_tweets if t["category"].lower() == category.lower()]
-    return list(reversed(filtered_tweets))[:limit]
+        all_tweets = [t for t in all_tweets if t["category"].lower() == category.lower()]
+    return list(reversed(all_tweets))[:limit]
 
 
 @app.get("/api/alerts")
