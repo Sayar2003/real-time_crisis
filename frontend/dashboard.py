@@ -146,22 +146,22 @@ st.markdown("""
     }
 
     /* CSS Overrides to pierce through Streamlit native grey markdown and force clear text */
-    .stMarkdown div p {
-        color: #ffffff !important; 
-    }
-    .stMarkdown div li {
-        color: #f7fafc !important; /* Makes bullet details inside active alerts crystal clear */
-    }
+   .feed-container p {
+    color: #ffffff !important;
+}
+.feed-container li {
+    color: #f7fafc !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
 # --- REFRESH CONFIG ---
-st_refresh = st_autorefresh(interval=2000, key="data_refresh_trigger")
+st_refresh = st_autorefresh(interval=5000, key="data_refresh_trigger")
 
 # --- DATA POLLING HELPERS ---
 def fetch_tweets():
     try:
-        response = requests.get(f"{BACKEND_URL}/api/tweets?limit=100", timeout=1.5)
+        response = requests.get(f"{BACKEND_URL}/api/tweets?limit=30", timeout=1.5)
         if response.status_code == 200:
             return response.json()
     except Exception:
@@ -265,12 +265,14 @@ with col_left:
             else: color = [46, 204, 113, 100]
                 
             tweets_list.append({
-                "lat": t["lat"],
-                "lon": t["lon"],
-                "category": cat,
-                "landmark": t.get("landmark", "Unknown"),
-                "color": color
-            })
+    "lat": t["lat"],
+    "lon": t["lon"],
+    "category": cat,
+    "landmark": t.get("landmark", "Unknown"),
+    "color": color,
+    "tweet_count": 1,
+    "z_score": "N/A"
+})
             
     df_tweets = pd.DataFrame(tweets_list) if tweets_list else pd.DataFrame(columns=["lat", "lon", "category", "landmark", "color"])
     
@@ -286,6 +288,15 @@ with col_left:
                 "landmark": a.get("landmark", "Detected Cluster")
             })
     df_alerts = pd.DataFrame(alerts_list) if alerts_list else pd.DataFrame(columns=["lat", "lon", "category", "tweet_count", "z_score", "landmark"])
+    
+    heatmap_layer = pdk.Layer(
+    "HeatmapLayer",
+    data=df_tweets,
+    get_position="[lon, lat]",
+    get_weight=1,
+    radiusPixels=60,
+    opacity=0.4,
+)
     
     tweets_layer = pdk.Layer(
         "ScatterplotLayer",
@@ -307,24 +318,49 @@ with col_left:
         pickable=True
     )
     
+    # Dynamically center map on active alerts, fall back to world view if none
+if alerts_list:
+    center_lat = np.mean([a["lat"] for a in alerts_list])
+    center_lon = np.mean([a["lon"] for a in alerts_list])
+    zoom = 11.0
+elif tweets_list:
+    center_lat = np.mean([t["lat"] for t in tweets_list])
+    center_lon = np.mean([t["lon"] for t in tweets_list])
+    zoom = 10.0
+else:
+    center_lat = 20.0
+    center_lon = 0.0
+    zoom = 1.5  # world view when no data
+
     view_state = pdk.ViewState(
-        latitude=51.5074,
-        longitude=-0.1278,
-        zoom=11.2,
-        pitch=20
-    )
+    latitude=center_lat,
+    longitude=center_lon,
+    zoom=zoom,
+    pitch=20
+)
     
     tooltip = {
-        "html": "<b>Category:</b> {category}<br/><b>Landmark:</b> {landmark}",
-        "style": {"background-color": "#1f2833", "color": "#ffffff"}
+    "html": """
+        <b>Category:</b> {category}<br/>
+        <b>Landmark:</b> {landmark}<br/>
+        <b>Reports:</b> {tweet_count}<br/>
+        <b>Z-Score:</b> {z_score}
+    """,
+    "style": {
+        "background-color": "#1f2833",
+        "color": "#ffffff",
+        "border": "1px solid #45f3ff",
+        "border-radius": "6px",
+        "padding": "8px"
     }
+}
     
     # --- HIGH-VISIBILITY MAP LAYOUT ---
     st.pydeck_chart(
         pdk.Deck(
             map_style="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
             initial_view_state=view_state,
-            layers=[tweets_layer, alerts_layer],
+            layers=[heatmap_layer, tweets_layer, alerts_layer],
             tooltip=tooltip,
             height=500  
         )
@@ -505,7 +541,6 @@ if st.sidebar.button("🚨 Inject Crisis Event", use_container_width=True):
     success = trigger_injection(inject_cat, inject_landmark, inject_duration)
     if success:
         st.sidebar.success(f"Successfully injected active {inject_cat} crisis at {inject_landmark}!")
-        st.balloons()
     else:
         st.sidebar.error("Failed to inject crisis event.")
 
@@ -514,14 +549,11 @@ st.sidebar.markdown("#### Test Presets")
 if st.sidebar.button("🔥 Fire at London Eye (30s)", use_container_width=True):
     if trigger_injection("Fire", "London Eye", 30):
         st.sidebar.success("Injected: Fire at London Eye")
-        st.balloons()
-        
+
 if st.sidebar.button("🌊 Flooding near Big Ben (40s)", use_container_width=True):
     if trigger_injection("Flood", "Big Ben", 40):
         st.sidebar.success("Injected: Flood near Big Ben")
-        st.balloons()
-        
+
 if st.sidebar.button("📣 Protests in Trafalgar Square (30s)", use_container_width=True):
     if trigger_injection("Civic Unrest", "Trafalgar Square", 30):
         st.sidebar.success("Injected: Protests in Trafalgar Square")
-        st.balloons()
