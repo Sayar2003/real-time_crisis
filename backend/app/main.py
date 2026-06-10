@@ -13,7 +13,9 @@ from pydantic import BaseModel
 from backend.app.config import (
     SIMULATION_TWEET_RATE,
     ROLLING_WINDOW_MINUTES,
-    CRISIS_CATEGORIES
+    CRISIS_CATEGORIES,
+    ANALYTICS_INTERVAL_SECONDS,
+    MAX_TWEETS_IN_MEMORY
 )
 from backend.app.simulator import generate_next_tweet, inject_crisis_event
 from backend.app.processor import get_classifier, clean_text, geocode_tweet, get_nearest_landmark, reload_spacy
@@ -29,7 +31,7 @@ processed_queue = asyncio.Queue()
 
 # In-memory database of processed tweets (thread-safe operations in asyncio single loop)
 # In-memory database of processed tweets — deque auto-drops oldest at maxlen
-tweets_db: deque = deque(maxlen=1000)
+tweets_db: deque = deque(maxlen=MAX_TWEETS_IN_MEMORY)
 active_alerts: List[dict] = []
 resolved_alerts: List[dict] = []
 
@@ -183,7 +185,7 @@ async def analytics_worker():
     try:
         while True:
             try:
-                await asyncio.sleep(3.0)
+                await asyncio.sleep(ANALYTICS_INTERVAL_SECONDS)
 
                 # 1. Drain all processed items currently in queue
                 while not processed_queue.empty():
