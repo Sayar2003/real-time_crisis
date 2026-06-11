@@ -2,11 +2,9 @@
 
 import re
 import math
+import asyncio
 import logging
 from typing import Dict, List, Tuple, Optional
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.naive_bayes import MultinomialNB
-from sklearn.pipeline import Pipeline
 from backend.app.config import LANDMARKS, CATEGORIES, CRISIS_CATEGORIES, CITY_ANCHOR
 
 logger = logging.getLogger(__name__)
@@ -86,116 +84,91 @@ def get_nearest_landmark(lat: float, lon: float) -> str:
     return "Unknown Location"
 
 class CrisisClassifier:
-    """A lightweight text classifier trained on synthetic crisis text at startup."""
+    """
+    Zero-shot crisis classifier using facebook/bart-large-mnli.
+    No training data needed — works on any real-world text immediately.
+    Falls back to keyword matching if the model fails to load.
+    """
+
+    LABEL_MAP = {
+        "fire or explosion emergency":          "Fire",
+        "flood or storm disaster":              "Flood",
+        "civil unrest or protest violence":     "Civic Unrest",
+        "disease outbreak or health emergency": "Outbreak",
+        "general social media post":            "General"
+    }
+
+    CANDIDATE_LABELS = list(LABEL_MAP.keys())
+
+    KEYWORD_MAP = {
+        "Fire":         ["fire", "blaze", "explosion", "smoke", "flames", "burning", "evacuate"],
+        "Flood":        ["flood", "flooding", "submerged", "underwater", "storm", "overflow", "rain"],
+        "Civic Unrest": ["protest", "riot", "demonstration", "clash", "unrest", "police", "march"],
+        "Outbreak":     ["outbreak", "virus", "epidemic", "infection", "quarantine", "sick", "disease"],
+    }
+
     def __init__(self):
         self.pipeline = None
-        self.train_classifier()
+        self._load_model()
 
-    def train_classifier(self):
-        """Generates synthetic dataset and fits TF-IDF + Naive Bayes pipeline."""
-        logger.info("Generating synthetic training dataset for classifier...")
-        
-        # Base templates for generating training sentences
-        templates = {
-            "General": [
-                "Enjoying a lovely walk around {landmark}.",
-                "Traffic is a bit slow near {landmark} this afternoon.",
-                "Having a delicious coffee and a pastry close to {landmark}.",
-                "Beautiful weather at {landmark} right now!",
-                "Shopping near {landmark}, it is incredibly crowded.",
-                "Strolling through {landmark} on this nice day.",
-                "Just passed by {landmark} on my commute back home.",
-                "Met some old friends near {landmark} for a quick lunch.",
-                "A lovely, quiet and peaceful evening around {landmark}.",
-                "Stunning view of {landmark} today.",
-                "Visiting {landmark} with family, having a great time.",
-                "Beautiful sunset over {landmark}.",
-                "Walking around the city, took a detour to {landmark}.",
-                "The lights on {landmark} look beautiful tonight.",
-                "Enjoying the weekend walk near {landmark}."
-            ],
-            "Fire": [
-                "OMG! Huge fire near {landmark}! Smoke is rising high!",
-                "Firefighters are battling a massive blaze at a building near {landmark}!",
-                "There is a serious building fire close to {landmark}. Avoid the area!",
-                "Smelling strong smoke and seeing flames near {landmark}. Stay safe!",
-                "Building on fire near {landmark}. Fire alarms ringing everywhere!",
-                "Massive explosion and fire near {landmark}! Rescue teams on scene.",
-                "A warehouse is burning down close to {landmark}. Heavy smoke!",
-                "Avoid the streets near {landmark}, fire trucks blocking road.",
-                "Huge structure fire near {landmark}. Hope everyone got out safely.",
-                "Emergency! Fire outbreak at a commercial building near {landmark}!"
-            ],
-            "Flood": [
-                "Serious flooding near {landmark}! Roads are completely underwater!",
-                "The water is rising fast around {landmark} after the heavy storm!",
-                "Flooded streets close to {landmark}. Cars are submerged and stuck!",
-                "Basements getting flooded near {landmark}. The rain won't stop.",
-                "River overflowing near {landmark}. Flood warning issued!",
-                "Severe flood alert near {landmark}. Avoid walking near the river.",
-                "Flash flood drowning the roads near {landmark}. Stay indoors!",
-                "Water levels reaching knee height near {landmark} after downpour.",
-                "Emergency teams evacuating residents near {landmark} due to rising flood.",
-                "Streets look like rivers near {landmark} due to heavy rain!"
-            ],
-            "Civic Unrest": [
-                "Huge protest blocking the streets near {landmark}!",
-                "Police and protestors clashing close to {landmark} right now.",
-                "Massive demonstration near {landmark}, riot police are deployed!",
-                "Avoid the area around {landmark}, the crowd is getting aggressive!",
-                "Protestors chanting and blocking traffic near {landmark}.",
-                "Violent clashes reported near {landmark}. Stay away from downtown.",
-                "Rally turning violent near {landmark}. Police firing tear gas.",
-                "Demonstration causing traffic chaos around {landmark}.",
-                "Crowd blocking entrance to {landmark} during political protest.",
-                "Civic unrest and riots breaking out near {landmark}."
-            ],
-            "Outbreak": [
-                "Public health alert: several food poisoning cases reported near {landmark}!",
-                "A sudden viral outbreak reported at a school near {landmark}.",
-                "Dozens hospitalized with infection symptoms close to {landmark}.",
-                "Warning: measles outbreak detected in the community around {landmark}.",
-                "Many people falling sick near {landmark}. Local clinic is full.",
-                "New bacterial infection outbreak detected near {landmark}.",
-                "Health warning issued for the area around {landmark} due to virus outbreak.",
-                "Salmonella outbreak linked to restaurants near {landmark}.",
-                "Contagious flu spreading rapidly near {landmark}.",
-                "Doctors report a spike in infectious cases near {landmark}."
-            ]
-        }
-        
-        X = []
-        y = []
-        
-        # Populate training data by combining templates and landmarks
-        for category, sentence_list in templates.items():
-            for template in sentence_list:
-                for landmark in LANDMARKS.keys():
-                    # Generate variations
-                    X.append(template.format(landmark=landmark.title()))
-                    y.append(category)
-                    
-                    # Add noise variations (exclamation, hashtags)
-                    X.append(template.format(landmark=landmark.title()) + " #Urgent")
-                    y.append(category)
-                    X.append(template.format(landmark=landmark.title()).lower())
-                    y.append(category)
-        
-        # Build vectorization and classifier pipeline
-        self.pipeline = Pipeline([
-            ("tfidf", TfidfVectorizer(ngram_range=(1, 2), stop_words="english")),
-            ("clf", MultinomialNB(alpha=0.1))
-        ])
-        
-        self.pipeline.fit(X, y)
-        logger.info(f"Classifier trained successfully on {len(X)} samples.")
+    def _load_model(self):
+        """Loads the zero-shot classification model. Falls back gracefully if unavailable."""
+        try:
+            logger.info("Loading zero-shot classifier (facebook/bart-large-mnli)...")
+            from transformers import pipeline as hf_pipeline
+            self.pipeline = hf_pipeline(
+                "zero-shot-classification",
+                model="facebook/bart-large-mnli",
+                device=-1   # CPU; change to 0 if you have a GPU
+            )
+            logger.info("Zero-shot classifier loaded successfully.")
+        except Exception as e:
+            logger.warning(f"Could not load transformer model: {e}. Using keyword fallback.")
+            self.pipeline = None
 
     def predict(self, text: str) -> str:
-        """Predicts the category of a given text."""
-        if self.pipeline is None:
+        """
+        Predicts crisis category for a given text.
+        Uses zero-shot BART if available, falls back to keyword matching.
+        """
+        if not text or not text.strip():
             return "General"
-        cleaned = clean_text(text)
-        return self.pipeline.predict([cleaned])[0]
+
+        # --- Transformer path ---
+        if self.pipeline is not None:
+            try:
+                result = self.pipeline(
+                    text[:512],
+                    self.CANDIDATE_LABELS,
+                    multi_label=False
+                )
+                top_label = result["labels"][0]
+                top_score = result["scores"][0]
+
+                if top_score >= 0.4:
+                    return self.LABEL_MAP.get(top_label, "General")
+                return "General"
+
+            except Exception as e:
+                logger.error(f"Transformer inference failed: {e}. Using keyword fallback.")
+
+        # --- Keyword fallback path ---
+        return self._keyword_predict(text)
+
+    def _keyword_predict(self, text: str) -> str:
+        """Simple keyword voting classifier as fallback."""
+        text_lower = text.lower()
+        scores = {cat: 0 for cat in self.KEYWORD_MAP}
+
+        for cat, keywords in self.KEYWORD_MAP.items():
+            for kw in keywords:
+                if kw in text_lower:
+                    scores[cat] += 1
+
+        best_cat = max(scores, key=scores.get)
+        if scores[best_cat] > 0:
+            return best_cat
+        return "General"
 
 # Global instance of classifier
 classifier = None
@@ -204,6 +177,14 @@ def get_classifier() -> CrisisClassifier:
     global classifier
     if classifier is None:
         classifier = CrisisClassifier()
+    return classifier
+
+async def get_classifier_async() -> CrisisClassifier:
+    """Loads classifier in thread executor to avoid blocking the event loop."""
+    global classifier
+    if classifier is None:
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, get_classifier)
     return classifier
 
 def reload_spacy():
