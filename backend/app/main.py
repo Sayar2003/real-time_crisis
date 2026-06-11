@@ -57,8 +57,9 @@ async def lifespan(app: FastAPI):
     # 1. Ensure spaCy is reloaded if installed
     reload_spacy()
     
-    # 2. Pre-train NLP classifier
-    get_classifier()
+    # 2. Load NLP classifier without blocking event loop
+    from backend.app.processor import get_classifier_async
+    await get_classifier_async()
     
     # 3. Launch background workers
     sim_worker = asyncio.create_task(simulation_worker())
