@@ -4,7 +4,7 @@ import random
 import time
 import uuid
 from typing import Dict, List, Optional
-from backend.app.config import CITY_NAME, CITY_ANCHOR, LANDMARKS, CRISIS_CATEGORIES
+from backend.app.config import CITY_NAME, CITY_ANCHOR, LANDMARKS, CRISIS_CATEGORIES, MONITORED_REGIONS
 
 # Templates for generating synthetic social media posts
 BACKGROUND_TEMPLATES = [
@@ -33,7 +33,7 @@ CRISIS_TEMPLATES = {
         "The water levels are rising fast around {landmark} after the heavy storm!",
         "Flooded streets close to {landmark}. Traffic is totally blocked and cars are stuck!",
         "Basements getting flooded near {landmark}. This rain is absolutely relentless.",
-        "River Thames is overflowing near {landmark}. Avoid walking near the banks!"
+        "The river is overflowing near {landmark}. Avoid walking near the banks!"
     ],
     "Civic Unrest": [
         "Huge protest blocking the streets near {landmark}! Traffic is at a standstill.",
@@ -56,21 +56,26 @@ CRISIS_TEMPLATES = {
 active_crises: Dict[str, dict] = {}
 
 def get_random_landmark() -> str:
+    """Picks a random landmark from any monitored city."""
     return random.choice(list(LANDMARKS.keys()))
+
+def get_random_region_anchor() -> dict:
+    """Picks a random city anchor for noise tweet generation."""
+    region = random.choice(list(MONITORED_REGIONS.values()))
+    return region["anchor"]
 
 def generate_noise_tweet() -> dict:
     landmark = get_random_landmark()
     template = random.choice(BACKGROUND_TEMPLATES)
     text = template.format(landmark=landmark.title())
-    
-    # 70% chance to have a GPS tag (geotagged)
+
     if random.random() < 0.7:
         lat_base, lon_base = LANDMARKS[landmark]
         lat = lat_base + random.uniform(-0.001, 0.001)
         lon = lon_base + random.uniform(-0.001, 0.001)
     else:
         lat, lon = None, None
-        
+
     return {
         "id": str(uuid.uuid4()),
         "text": text,
@@ -114,10 +119,11 @@ def inject_crisis_event(category: str, landmark_name: str, duration: int = 40) -
     if landmark_key in LANDMARKS:
         lat, lon = LANDMARKS[landmark_key]
     else:
-        # Fallback to city center + minor offset if landmark is not found
-        lat = CITY_ANCHOR["lat"] + random.uniform(-0.02, 0.02)
-        lon = CITY_ANCHOR["lon"] + random.uniform(-0.02, 0.02)
-        landmark_name = "Custom Location"
+    # Fallback to random city anchor + minor offset
+     anchor = get_random_region_anchor()
+     lat = anchor["lat"] + random.uniform(-0.02, 0.02)
+     lon = anchor["lon"] + random.uniform(-0.02, 0.02)
+     landmark_name = "Custom Location"
         
     crisis_id = str(uuid.uuid4())
     active_crises[crisis_id] = {

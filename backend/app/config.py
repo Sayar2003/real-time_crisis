@@ -5,21 +5,78 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- City & Landmarks ---
-CITY_NAME = "London"
-CITY_ANCHOR = {"lat": 51.5074, "lon": -0.1278}
-
-LANDMARKS = {
-    "big ben": (51.5007, -0.1246),
-    "hyde park": (51.5073, -0.1657),
-    "london eye": (51.5033, -0.1195),
-    "tower bridge": (51.5055, -0.0754),
-    "buckingham palace": (51.5014, -0.1419),
-    "trafalgar square": (51.5080, -0.1281),
-    "british museum": (51.5194, -0.1270),
-    "soho": (51.5136, -0.1365),
-    "covent garden": (51.5117, -0.1240),
-    "piccadilly circus": (51.5101, -0.1342)
+# --- Multi-City Configuration ---
+MONITORED_REGIONS = {
+    "london": {
+        "anchor": {"lat": 51.5074, "lon": -0.1278},
+        "landmarks": {
+            "big ben":            (51.5007, -0.1246),
+            "hyde park":          (51.5073, -0.1657),
+            "london eye":         (51.5033, -0.1195),
+            "tower bridge":       (51.5055, -0.0754),
+            "buckingham palace":  (51.5014, -0.1419),
+            "trafalgar square":   (51.5080, -0.1281),
+            "british museum":     (51.5194, -0.1270),
+            "soho":               (51.5136, -0.1365),
+            "covent garden":      (51.5117, -0.1240),
+            "piccadilly circus":  (51.5101, -0.1342),
+        }
+    },
+    "new_delhi": {
+        "anchor": {"lat": 28.6139, "lon": 77.2090},
+        "landmarks": {
+            "india gate":         (28.6129, 77.2295),
+            "connaught place":    (28.6315, 77.2167),
+            "red fort":           (28.6562, 77.2410),
+            "chandni chowk":      (28.6506, 77.2334),
+            "saket":              (28.5244, 77.2066),
+            "lajpat nagar":       (28.5677, 77.2433),
+            "nehru place":        (28.5491, 77.2519),
+            "dwarka":             (28.5921, 77.0460),
+        }
+    },
+    "dhaka": {
+        "anchor": {"lat": 23.8103, "lon": 90.4125},
+        "landmarks": {
+            "motijheel":          (23.7338, 90.4177),
+            "gulshan":            (23.7808, 90.4152),
+            "dhanmondi":          (23.7461, 90.3742),
+            "old dhaka":          (23.7104, 90.4074),
+            "mirpur":             (23.8223, 90.3654),
+            "uttara":             (23.8759, 90.3795),
+            "shahbag":            (23.7388, 90.3950),
+        }
+    },
+    "jakarta": {
+        "anchor": {"lat": -6.2088, "lon": 106.8456},
+        "landmarks": {
+            "monas":              (-6.1754, 106.8272),
+            "kota tua":           (-6.1352, 106.8133),
+            "glodok":             (-6.1489, 106.8167),
+            "sudirman":           (-6.2088, 106.8175),
+            "kemang":             (-6.2607, 106.8133),
+            "tanah abang":        (-6.1864, 106.8133),
+            "senen":              (-6.1764, 106.8455),
+        }
+    }
 }
+
+# Flatten for backward compatibility — code that imports LANDMARKS still works
+LANDMARKS = {
+    landmark: coords
+    for region in MONITORED_REGIONS.values()
+    for landmark, coords in region["landmarks"].items()
+}
+
+# Keep CITY_ANCHOR pointing to London for backward compatibility
+CITY_NAME = "London"
+CITY_ANCHOR = MONITORED_REGIONS["london"]["anchor"]
+
+# List of all region anchors for map centering
+REGION_ANCHORS = [
+    {"name": name, **data["anchor"]}
+    for name, data in MONITORED_REGIONS.items()
+]
 
 # --- Categories ---
 CATEGORIES = ["General", "Fire", "Flood", "Civic Unrest", "Outbreak"]

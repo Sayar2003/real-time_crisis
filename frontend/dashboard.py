@@ -532,8 +532,15 @@ st.sidebar.write("Simulate a localized crisis signal event at a London landmark:
 
 inject_cat = st.sidebar.selectbox("Crisis Category", ["Fire", "Flood", "Civic Unrest", "Outbreak"])
 inject_landmark = st.sidebar.selectbox("Epicenter Landmark", [
-    "Big Ben", "Hyde Park", "London Eye", "Tower Bridge", "Buckingham Palace", 
-    "Trafalgar Square", "British Museum", "Soho", "Covent Garden", "Piccadilly Circus"
+    # London
+    "Big Ben", "Hyde Park", "London Eye", "Tower Bridge",
+    "Trafalgar Square", "Soho", "Piccadilly Circus",
+    # New Delhi
+    "India Gate", "Connaught Place", "Red Fort", "Chandni Chowk",
+    # Dhaka
+    "Motijheel", "Gulshan", "Dhanmondi", "Old Dhaka",
+    # Jakarta
+    "Monas", "Kota Tua", "Sudirman", "Kemang",
 ])
 inject_duration = st.sidebar.slider("Simulation Duration (s)", 15, 60, 30)
 
