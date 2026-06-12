@@ -3,6 +3,7 @@
 import time
 import logging
 import math
+import asyncio
 from collections import deque
 from typing import List, Dict, Tuple, Optional
 import numpy as np
@@ -209,6 +210,10 @@ class AnalyticsEngine:
                 }
                 matched_alert_ids.add(alert_id)
                 logger.info(f"🚨 NEW ALERT RAISED: {alert_id} ({category}) at ({lat:.4f}, {lon:.4f}) | Landmark: {landmark} | Z-score {z_score:.2f}")
+
+                # Schedule Groq LLM summary generation (non-blocking thread)
+                asyncio.create_task(self._attach_llm_summary(alert_id))
+
         # 4. Handle timeouts and resolve inactive alerts
         resolved_keys = []
         for aid, alert in list(self.active_alerts.items()):
@@ -228,3 +233,20 @@ class AnalyticsEngine:
             self.resolved_alerts = self.resolved_alerts[-50:]
             
         return list(self.active_alerts.values()), self.resolved_alerts
+
+
+async def _attach_llm_summary(self, alert_id: str):
+    """Generates and attaches a Groq LLM summary to an alert after it's created."""
+    try:
+        from backend.app.llm import generate_alert_summary
+        alert = self.active_alerts.get(alert_id)
+        if alert is None:
+            return
+            
+        summary = await generate_alert_summary(alert)
+        
+        if alert_id in self.active_alerts:
+            self.active_alerts[alert_id]["llm_summary"] = summary
+            logger.info(f"Groq summary attached to {alert_id}")
+    except Exception as e:
+        logger.error(f"Failed to attach Groq summary to {alert_id}: {e}")
