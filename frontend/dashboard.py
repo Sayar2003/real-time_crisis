@@ -470,6 +470,10 @@ with col_right:
             a_time_raw = a.get('start_time', time.time())
             a_time = time.strftime('%H:%M:%S', time.localtime(a_time_raw))
             
+            # --- STEP 5 EXTRACTION ---
+            # Fetch the asynchronous Groq AI briefing payload if available
+            llm_summary = a.get("llm_summary", "")
+            
             st.error(f"""
             🔴 **{a_cat} ALERT ({a_id})**
             * **Epicenter:** {a_landmark} (lat: {a_lat:.4f}, lon: {a_lon:.4f})
@@ -477,6 +481,17 @@ with col_right:
             * **Signal Z-score:** {a_z:.2f}
             * **Active since:** {a_time}
             """)
+            
+            # --- STEP 5 DYNAMIC UI INJECTION ---
+            # Automatically append a high-contrast container if a summary is ready
+            if llm_summary:
+                st.markdown(f"""
+                <div style='background: #1a1a2e; border-left: 3px solid #45f3ff;
+                padding: 10px 14px; border-radius: 0 6px 6px 0;
+                font-size: 13px; color: #c8d4e0; margin-top: -10px; margin-bottom: 15px;'>
+                🤖 <b style='color:#45f3ff'>Groq AI Intelligence Briefing</b><br/>{llm_summary}
+                </div>
+                """, unsafe_allow_html=True)
             
     st.write("")
     
