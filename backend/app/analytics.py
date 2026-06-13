@@ -236,17 +236,25 @@ class AnalyticsEngine:
 
 
 async def _attach_llm_summary(self, alert_id: str):
-    """Generates and attaches a Groq LLM summary to an alert after it's created."""
+    """Generates LLM summary, attaches it to alert, and sends Slack notification."""
     try:
         from backend.app.llm import generate_alert_summary
+        from backend.app.notifier import send_slack_alert
+
         alert = self.active_alerts.get(alert_id)
         if alert is None:
             return
-            
+
+        # Generate LLM summary
         summary = await generate_alert_summary(alert)
-        
+
+        # Attach to alert
         if alert_id in self.active_alerts:
             self.active_alerts[alert_id]["llm_summary"] = summary
-            logger.info(f"Groq summary attached to {alert_id}")
+            logger.info(f"LLM summary attached to {alert_id}")
+
+        # Send Slack notification with summary
+        await send_slack_alert(alert, llm_summary=summary)
+
     except Exception as e:
-        logger.error(f"Failed to attach Groq summary to {alert_id}: {e}")
+        logger.error(f"Failed to attach LLM summary or send Slack for {alert_id}: {e}")
