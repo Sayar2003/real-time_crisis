@@ -1,5 +1,4 @@
 # backend/app/main.py
-
 import asyncio
 import logging
 import time
@@ -20,6 +19,7 @@ from backend.app.config import (
 from backend.app.simulator import generate_next_tweet, inject_crisis_event
 from backend.app.processor import get_classifier, clean_text, geocode_tweet, get_nearest_landmark, reload_spacy
 from backend.app.analytics import AnalyticsEngine
+from backend.app.gdelt_ingestor import get_gdelt_ingestor
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -29,7 +29,6 @@ logger = logging.getLogger(__name__)
 raw_queue = asyncio.Queue()
 processed_queue = asyncio.Queue()
 
-# In-memory database of processed tweets (thread-safe operations in asyncio single loop)
 # In-memory database of processed tweets — deque auto-drops oldest at maxlen
 tweets_db: deque = deque(maxlen=MAX_TWEETS_IN_MEMORY)
 active_alerts: List[dict] = []
@@ -39,62 +38,14 @@ resolved_alerts: List[dict] = []
 total_processed_count = 0
 system_start_time = time.time()
 
-# Instantiating the analytics engine
+# Analytics engine
 analytics_engine = AnalyticsEngine()
 
-# Pydantic models for request validation
+# Pydantic models
 class CrisisInjection(BaseModel):
     category: str
     landmark: str
     duration: int = 30
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Orchestrates startup and shutdown processes."""
-    # Startup tasks
-    logger.info("Initializing AegisStream services...")
-    
-    # 1. Ensure spaCy is reloaded if installed
-    reload_spacy()
-    
-    # 2. Load NLP classifier without blocking event loop
-    from backend.app.processor import get_classifier_async
-    await get_classifier_async()
-    
-    # 3. Launch background workers
-    sim_worker = asyncio.create_task(simulation_worker())
-    proc_worker = asyncio.create_task(processing_worker())
-    anal_worker = asyncio.create_task(analytics_worker())
-    
-    logger.info("AegisStream pipeline workers started.")
-    
-    yield
-    
-    # Shutdown tasks
-    logger.info("Stopping AegisStream services...")
-    sim_worker.cancel()
-    proc_worker.cancel()
-    anal_worker.cancel()
-    
-    # Wait for cancel to complete
-    await asyncio.gather(sim_worker, proc_worker, anal_worker, return_exceptions=True)
-    logger.info("Pipeline workers shut down.")
-
-app = FastAPI(
-    title="AegisStream API",
-    description="Real-Time Data Streaming and AI-Powered Crisis Intelligence System",
-    version="1.0.0",
-    lifespan=lifespan
-)
-
-# Enable CORS for frontend dashboard communication
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 
 # --- BACKGROUND WORKER LOOPS ---
@@ -110,7 +61,7 @@ async def simulation_worker():
                 await asyncio.sleep(1.0 / SIMULATION_TWEET_RATE)
             except Exception as e:
                 logger.error(f"Error generating tweet: {e}", exc_info=True)
-                await asyncio.sleep(1.0)  # brief pause then continue
+                await asyncio.sleep(1.0)
     except asyncio.CancelledError:
         logger.info("Ingestion Simulator stopping.")
 
@@ -133,7 +84,7 @@ async def processing_worker():
                 # 2. Classify Category
                 category = classifier.predict(cleaned_text)
 
-                # 3. Geocode (NER or geotag matching)
+                # 3. Geocode
                 lat = raw_tweet["lat"]
                 lon = raw_tweet["lon"]
                 resolved_landmark = "Unknown"
@@ -147,38 +98,37 @@ async def processing_worker():
                         lon = nlp_lon
                         resolved_landmark = landmark_name
 
-                # 4. Enrich tweet dictionary
+                # 4. Enrich tweet
                 processed_tweet = {
-                    "id": raw_tweet["id"],
-                    "text": text,
+                    "id":        raw_tweet["id"],
+                    "text":      text,
                     "cleaned_text": cleaned_text,
                     "timestamp": raw_tweet["timestamp"],
-                    "category": category,
-                    "lat": lat,
-                    "lon": lon,
-                    "landmark": resolved_landmark,
-                    "geotagged": raw_tweet["geotagged"] or (lat is not None)
+                    "category":  category,
+                    "lat":       lat,
+                    "lon":       lon,
+                    "landmark":  resolved_landmark,
+                    "geotagged": raw_tweet.get("geotagged", False) or (lat is not None),
+                    "source":    raw_tweet.get("source", "simulator"),
                 }
 
-                # 5. Append to recent tweets list
-                # 5. Append to recent tweets list (deque auto-drops oldest when maxlen reached)
+                # 5. Store
                 tweets_db.append(processed_tweet)
-
                 total_processed_count += 1
 
-                # 6. Push to processed queue for analytics
+                # 6. Push to analytics queue
                 await processed_queue.put(processed_tweet)
                 raw_queue.task_done()
 
             except Exception as e:
                 logger.error(f"Failed to process tweet: {e}", exc_info=True)
-                await asyncio.sleep(0.1)  # brief pause then continue
+                await asyncio.sleep(0.1)
     except asyncio.CancelledError:
         logger.info("Stream Processor stopping.")
 
 
 async def analytics_worker():
-    """Periodically consumes processed tweets, manages rolling window, and runs clustering."""
+    """Periodically runs clustering and anomaly detection on rolling window."""
     global active_alerts, resolved_alerts
     rolling_window: List[dict] = []
 
@@ -188,24 +138,96 @@ async def analytics_worker():
             try:
                 await asyncio.sleep(ANALYTICS_INTERVAL_SECONDS)
 
-                # 1. Drain all processed items currently in queue
                 while not processed_queue.empty():
                     processed_tweet = await processed_queue.get()
                     rolling_window.append(processed_tweet)
                     processed_queue.task_done()
 
-                # 2. Prune rolling window
                 cutoff_time = time.time() - (ROLLING_WINDOW_MINUTES * 60)
                 rolling_window = [t for t in rolling_window if t["timestamp"] >= cutoff_time]
 
-                # 3. Run clustering and anomaly detection
                 active_alerts, resolved_alerts = analytics_engine.run_analytics(rolling_window)
 
             except Exception as e:
                 logger.error(f"Error in Analytics Engine: {e}", exc_info=True)
-                await asyncio.sleep(1.0)  # brief pause then continue
+                await asyncio.sleep(1.0)
     except asyncio.CancelledError:
         logger.info("Analytics Engine worker stopping.")
+
+
+async def gdelt_worker():
+    """Polls GDELT every 15 minutes for real-world crisis events."""
+    ingestor = get_gdelt_ingestor()
+    logger.info("GDELT Ingestor started — polling every 15 minutes.")
+    try:
+        while True:
+            try:
+                loop = asyncio.get_event_loop()
+                events = await loop.run_in_executor(None, ingestor.fetch_latest)
+
+                for event in events:
+                    await raw_queue.put(event)
+
+                logger.info(f"GDELT: {len(events)} events added to pipeline.")
+
+            except Exception as e:
+                logger.error(f"GDELT worker error: {e}", exc_info=True)
+
+            await asyncio.sleep(900)
+
+    except asyncio.CancelledError:
+        logger.info("GDELT Ingestor stopping.")
+
+
+# --- LIFESPAN ---
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Orchestrates startup and shutdown processes."""
+    logger.info("Initializing AegisStream services...")
+
+    reload_spacy()
+
+    from backend.app.processor import get_classifier_async
+    await get_classifier_async()
+
+    sim_worker        = asyncio.create_task(simulation_worker())
+    proc_worker       = asyncio.create_task(processing_worker())
+    anal_worker       = asyncio.create_task(analytics_worker())
+    gdelt_worker_task = asyncio.create_task(gdelt_worker())
+
+    logger.info("AegisStream pipeline workers started.")
+
+    yield
+
+    logger.info("Stopping AegisStream services...")
+    sim_worker.cancel()
+    proc_worker.cancel()
+    anal_worker.cancel()
+    gdelt_worker_task.cancel()
+    await asyncio.gather(
+        sim_worker, proc_worker, anal_worker, gdelt_worker_task,
+        return_exceptions=True
+    )
+    logger.info("Pipeline workers shut down.")
+
+
+# --- APP ---
+
+app = FastAPI(
+    title="AegisStream API",
+    description="Real-Time Data Streaming and AI-Powered Crisis Intelligence System",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # --- REST API ENDPOINTS ---
@@ -215,7 +237,6 @@ async def get_tweets(
     limit: int = Query(50, ge=1, le=200),
     category: Optional[str] = None
 ):
-    """Returns list of recent processed tweets, newest first."""
     all_tweets = list(tweets_db)
     if category:
         all_tweets = [t for t in all_tweets if t["category"].lower() == category.lower()]
@@ -224,7 +245,6 @@ async def get_tweets(
 
 @app.get("/api/alerts")
 async def get_alerts():
-    """Returns active and resolved crisis alerts."""
     return {
         "active": active_alerts,
         "resolved": resolved_alerts
@@ -233,36 +253,31 @@ async def get_alerts():
 
 @app.post("/api/inject")
 async def inject_crisis(req: CrisisInjection):
-    """Triggers custom crisis event inside the stream simulation."""
     if req.category not in CRISIS_CATEGORIES:
         raise HTTPException(
             status_code=400,
             detail=f"Invalid category. Must be one of {CRISIS_CATEGORIES}"
         )
-    
     crisis_id = inject_crisis_event(
         category=req.category,
         landmark_name=req.landmark,
         duration=req.duration
     )
-    
     logger.info(f"Manual Injection API called: {req.category} at {req.landmark} (id: {crisis_id})")
     return {"status": "success", "crisis_id": crisis_id}
 
 
 @app.get("/api/status")
 async def get_status():
-    """Returns operational and performance metrics of AegisStream."""
     uptime = time.time() - system_start_time
     tps = total_processed_count / uptime if uptime > 0 else 0.0
-    
     return {
-        "status": "operational",
-        "uptime_seconds": int(uptime),
-        "raw_queue_depth": raw_queue.qsize(),
-        "processed_queue_depth": processed_queue.qsize(),
-        "total_tweets_processed": total_processed_count,
-        "throughput_tps": round(tps, 2),
-        "active_alerts_count": len(active_alerts),
-        "resolved_alerts_count": len(resolved_alerts)
+        "status":                   "operational",
+        "uptime_seconds":           int(uptime),
+        "raw_queue_depth":          raw_queue.qsize(),
+        "processed_queue_depth":    processed_queue.qsize(),
+        "total_tweets_processed":   total_processed_count,
+        "throughput_tps":           round(tps, 2),
+        "active_alerts_count":      len(active_alerts),
+        "resolved_alerts_count":    len(resolved_alerts)
     }

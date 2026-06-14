@@ -109,18 +109,37 @@ class AnalyticsEngine:
         detected_clusters = []
         
         if len(crisis_tweets) >= DBSCAN_MIN_SAMPLES:
-            # Build 3D feature array [lat, lon, time_scaled]
-            # Scale factor converts time (in minutes) to be comparable with coordinates in degrees
             scale_factor = DBSCAN_EPS / TEMPORAL_EPS_MINUTES
-            
+
             features = []
+            valid_tweets = []
             for t in crisis_tweets:
-                t_min = t["timestamp"] / 60.0
-                t_scaled = t_min * scale_factor
-                features.append([t["lat"], t["lon"], t_scaled])
-                
+                lat = t.get("lat")
+                lon = t.get("lon")
+                ts = t.get("timestamp")
+
+                # Skip any tweet with missing or NaN coordinates
+                if lat is None or lon is None or ts is None:
+                    continue
+                try:
+                    lat, lon, ts = float(lat), float(lon), float(ts)
+                except (ValueError, TypeError):
+                    continue
+                if np.isnan(lat) or np.isnan(lon) or np.isnan(ts):
+                    continue
+
+                t_scaled = (ts / 60.0) * scale_factor
+                features.append([lat, lon, t_scaled])
+                valid_tweets.append(t)
+
+            # Use only valid tweets for clustering
+            crisis_tweets = valid_tweets
+
+            if len(features) < DBSCAN_MIN_SAMPLES:
+                return list(self.active_alerts.values()), self.resolved_alerts
+
             X = np.array(features)
-            
+
             # Run DBSCAN
             db = DBSCAN(eps=DBSCAN_EPS, min_samples=DBSCAN_MIN_SAMPLES)
             labels = db.fit_predict(X)

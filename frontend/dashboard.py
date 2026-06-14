@@ -514,16 +514,21 @@ with col_right:
                 t_time = time.strftime("%H:%M:%S", time.localtime(t.get("timestamp", time.time())))
                 text = t.get("text", "")
                 
+                source = t.get("source", "simulator")
+                source_badge = "🌐 GDELT" if source == "gdelt" else "🤖 SIM"
+                source_color = "#45f3ff" if source == "gdelt" else "#7a90a4"
+
                 feed_html += f"""
                 <div class='tweet-card'>
-                    <div class='tweet-header'>
-                        <span class='category-badge {badge_class}'>{cat.upper()}</span>
-                        <span class='landmark-tag'>📍 {landmark}</span>
-                        <span class='tweet-time'>{t_time}</span>
-                    </div>
-                    <p class='tweet-text'>{text}</p>
+                <div class='tweet-header'>
+                    <span class='category-badge {badge_class}'>{cat.upper()}</span>
+                    <span class='landmark-tag'>📍 {landmark}</span>
+                    <span style='font-size:0.7rem;color:{source_color};'>{source_badge}</span>
+                    <span class='tweet-time'>{t_time}</span>
                 </div>
-                """
+                <p class='tweet-text'>{text}</p>
+            </div>
+            """
             
     feed_html += "</div>"
     st.markdown(feed_html, unsafe_allow_html=True)
