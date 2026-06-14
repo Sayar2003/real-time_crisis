@@ -38,6 +38,10 @@ resolved_alerts: List[dict] = []
 total_processed_count = 0
 system_start_time = time.time()
 
+# Classifier accuracy tracking
+correct_predictions = 0
+total_predictable   = 0
+
 # Analytics engine
 analytics_engine = AnalyticsEngine()
 
@@ -115,6 +119,14 @@ async def processing_worker():
                 # 5. Store
                 tweets_db.append(processed_tweet)
                 total_processed_count += 1
+
+                # 6. Track classifier accuracy using simulator ground truth
+                true_cat = raw_tweet.get("true_category")
+                if true_cat and true_cat != "General":
+                    global correct_predictions, total_predictable
+                    total_predictable += 1
+                    if category == true_cat:
+                        correct_predictions += 1
 
                 # 6. Push to analytics queue
                 await processed_queue.put(processed_tweet)
@@ -271,6 +283,8 @@ async def inject_crisis(req: CrisisInjection):
 async def get_status():
     uptime = time.time() - system_start_time
     tps = total_processed_count / uptime if uptime > 0 else 0.0
+    accuracy = (correct_predictions / total_predictable * 100) if total_predictable > 0 else 0.0
+
     return {
         "status":                   "operational",
         "uptime_seconds":           int(uptime),
@@ -279,5 +293,8 @@ async def get_status():
         "total_tweets_processed":   total_processed_count,
         "throughput_tps":           round(tps, 2),
         "active_alerts_count":      len(active_alerts),
-        "resolved_alerts_count":    len(resolved_alerts)
+        "resolved_alerts_count":    len(resolved_alerts),
+        "classifier_accuracy":      round(accuracy, 1),
+        "total_predictable":        total_predictable,
+        "correct_predictions":      correct_predictions,
     }

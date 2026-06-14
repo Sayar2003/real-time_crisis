@@ -131,7 +131,7 @@ st.markdown("<div class='dashboard-title'>🛡️ AegisStream Crisis Intelligenc
 st.markdown("<div class='dashboard-subtitle'>Real-Time Data Streaming & Spatial-Temporal Anomaly Detector</div>", unsafe_allow_html=True)
 
 # --- METRICS ---
-m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+m_col1, m_col2, m_col3, m_col4, m_col5 = st.columns(5)
 
 active_alerts = alerts_data.get("active", []) if isinstance(alerts_data, dict) else []
 active_cnt    = len(active_alerts)
@@ -156,6 +156,10 @@ with m_col3:
     st.markdown(f"<div class='metric-box'><div style='font-size:0.75rem;color:#b0b0c8;text-transform:uppercase;font-weight:600;'>Pipeline Throughput</div><div class='metric-value-info'>{throughput:.1f} <span style='font-size:0.9rem;'>tweets/s</span></div></div>", unsafe_allow_html=True)
 with m_col4:
     st.markdown(f"<div class='metric-box'><div style='font-size:0.75rem;color:#b0b0c8;text-transform:uppercase;font-weight:600;'>Total Streams Processed</div><div class='metric-value-info'>{total_processed}</div></div>", unsafe_allow_html=True)
+with m_col5:
+    accuracy = status_data.get("classifier_accuracy", 0.0)
+    acc_class = "metric-value-ok" if accuracy >= 70 else "metric-value-warning" if accuracy >= 50 else "metric-value-critical"
+    st.markdown(f"<div class='metric-box'><div style='font-size:0.75rem;color:#b0b0c8;text-transform:uppercase;font-weight:600;'>Classifier Accuracy</div><div class='{acc_class}'>{accuracy:.1f}%</div></div>", unsafe_allow_html=True)
 
 st.write("")
 
@@ -397,6 +401,8 @@ st.sidebar.markdown("<h2 style='color:#66fcf1;'>⚙️ AegisStream Control Panel
 if status_data:
     st.sidebar.write(f"**Backend Status:** Operational (Uptime: {status_data.get('uptime_seconds', 0)}s)")
     st.sidebar.write(f"**Queue Depth:** {status_data.get('raw_queue_depth', 0)} raw posts")
+    st.sidebar.write(f"**Classifier Accuracy:** {status_data.get('classifier_accuracy', 0.0):.1f}%")
+    st.sidebar.write(f"**Correct Predictions:** {status_data.get('correct_predictions', 0)}/{status_data.get('total_predictable', 0)}")
 
 st.sidebar.divider()
 st.sidebar.markdown("#### Analytics Engine Parameters")
