@@ -25,46 +25,122 @@ BACKEND_URL = "http://127.0.0.1:8000"
 
 st.markdown("""
 <style>
-    .stApp { background-color: #0b0c10; color: #e0e6ed; }
-    .dashboard-title {
-        color: #66fcf1; font-family: 'Outfit', sans-serif;
-        font-weight: 800; font-size: 2.2rem; margin-bottom: 0px;
-        text-shadow: 0 0 15px rgba(102, 252, 241, 0.5);
-    }
-    .dashboard-subtitle {
-        color: #45f3ff; font-size: 0.95rem;
-        margin-top: 0px; margin-bottom: 20px; opacity: 0.95;
-    }
-    .feed-container { max-height: 550px; overflow-y: auto; padding-right: 5px; }
-    .tweet-card {
-        border-radius: 8px; padding: 12px; margin-bottom: 10px;
-        background-color: #1f2833; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-        transition: transform 0.2s ease;
-    }
-    .tweet-card:hover { transform: translateY(-2px); }
-    .tweet-header { display: flex; justify-content: space-between; margin-bottom: 6px; }
-    .category-badge {
-        font-weight: bold; font-size: 0.75rem;
-        padding: 2px 8px; border-radius: 4px; color: #ffffff;
-    }
-    .badge-general { background-color: #7f8c8d; }
-    .badge-fire { background-color: #e74c3c; box-shadow: 0 0 5px rgba(231,76,60,0.5); }
-    .badge-flood { background-color: #3498db; box-shadow: 0 0 5px rgba(52,152,219,0.5); }
-    .badge-unrest { background-color: #f1c40f; color: #000000; box-shadow: 0 0 5px rgba(241,196,15,0.5); }
-    .badge-outbreak { background-color: #9b59b6; box-shadow: 0 0 5px rgba(155,89,182,0.5); }
-    .landmark-tag { color: #66fcf1; font-size: 0.75rem; font-weight: 500; }
-    .tweet-time { color: #b0b0c8; font-size: 0.72rem; }
-    .tweet-text { margin: 0; color: #ffffff; font-size: 0.82rem; line-height: 1.35; }
-    .metric-box {
-        background-color: #1f2833; border-radius: 8px;
-        padding: 15px; text-align: center; border: 1px solid #2d3748;
-    }
-    .metric-value-critical { color: #ff4d4d; font-size: 2rem; font-weight: bold; text-shadow: 0 0 12px rgba(255,77,77,0.4); }
-    .metric-value-warning  { color: #ffd43b; font-size: 2rem; font-weight: bold; text-shadow: 0 0 12px rgba(255,212,59,0.4); }
-    .metric-value-ok       { color: #2ecc71; font-size: 2rem; font-weight: bold; text-shadow: 0 0 12px rgba(46,204,113,0.4); }
-    .metric-value-info     { color: #66fcf1; font-size: 2rem; font-weight: bold; text-shadow: 0 0 12px rgba(102,252,241,0.4); }
-    .feed-container p  { color: #ffffff !important; }
-    .feed-container li { color: #f7fafc !important; }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ── Global ── */
+.stApp { background-color: #080c10; color: #c8d4e0; }
+.block-container { padding-top: 1.2rem !important; padding-bottom: 1rem !important; }
+
+/* ── Title ── */
+.dashboard-title {
+    color: #66fcf1;
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    font-size: 1.9rem;
+    margin-bottom: 2px;
+    letter-spacing: -0.5px;
+}
+.dashboard-subtitle {
+    color: #4a6a7a;
+    font-size: 0.8rem;
+    margin-top: 0px;
+    margin-bottom: 18px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+/* ── Metric boxes ── */
+.metric-box {
+    background: linear-gradient(135deg, #0d1520 0%, #111c28 100%);
+    border-radius: 10px;
+    padding: 14px 16px;
+    text-align: center;
+    border: 1px solid #1a2a3a;
+    position: relative;
+    overflow: hidden;
+}
+.metric-box::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #66fcf1, transparent);
+    opacity: 0.4;
+}
+.metric-label {
+    font-size: 0.65rem;
+    color: #4a6a7a;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-family: 'JetBrains Mono', monospace;
+    margin-bottom: 6px;
+}
+.metric-value {
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    font-size: 1.4rem;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.metric-value-critical { color: #ff4757; }
+.metric-value-warning  { color: #ffa502; }
+.metric-value-ok       { color: #2ed573; }
+.metric-value-info     { color: #66fcf1; }
+
+/* ── Feed container ── */
+.feed-container { max-height: 580px; overflow-y: auto; padding-right: 4px; }
+.feed-container::-webkit-scrollbar { width: 4px; }
+.feed-container::-webkit-scrollbar-track { background: transparent; }
+.feed-container::-webkit-scrollbar-thumb { background: #1e2d3d; border-radius: 4px; }
+
+/* ── Tweet cards ── */
+.tweet-card {
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    background: #0d1520;
+    border: 1px solid #1a2a3a;
+    border-left: 3px solid #1e3a4a;
+    transition: border-color 0.2s ease, transform 0.15s ease;
+}
+.tweet-card:hover {
+    border-left-color: #66fcf1;
+    transform: translateX(2px);
+}
+.tweet-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 5px;
+    flex-wrap: nowrap;
+}
+.category-badge {
+    font-weight: 600;
+    font-size: 0.65rem;
+    padding: 2px 7px;
+    border-radius: 4px;
+    color: #ffffff;
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 0.05em;
+    flex-shrink: 0;
+}
+.badge-general  { background: #2d3748; color: #a0aec0; }
+.badge-fire     { background: #2d1515; color: #fc8181; border: 1px solid #fc818150; }
+.badge-flood    { background: #152040; color: #63b3ed; border: 1px solid #63b3ed50; }
+.badge-unrest   { background: #2d2515; color: #f6e05e; border: 1px solid #f6e05e50; }
+.badge-outbreak { background: #251535; color: #b794f4; border: 1px solid #b794f450; }
+.landmark-tag   { color: #66fcf1; font-size: 0.7rem; font-weight: 500; flex-shrink: 0; }
+.tweet-time     { color: #2d4a5a; font-size: 0.65rem; font-family: 'JetBrains Mono', monospace; margin-left: auto; flex-shrink: 0; }
+.tweet-text     { margin: 0; color: #8aa4b8; font-size: 0.78rem; line-height: 1.4; }
+
+/* ── Section headers ── */
+h3 { color: #c8d4e0 !important; font-size: 0.9rem !important; font-weight: 500 !important; letter-spacing: 0.05em !important; text-transform: uppercase !important; }
+
+/* ── Streamlit overrides ── */
+.stAlert { border-radius: 8px !important; }
+div[data-testid="stInfo"] { background: #0d1a24 !important; border-color: #1a3a4a !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -127,8 +203,8 @@ if status_data is None:
     st.stop()
 
 # --- APP LAYOUT ---
-st.markdown("<div class='dashboard-title'>🛡️ AegisStream Crisis Intelligence</div>", unsafe_allow_html=True)
-st.markdown("<div class='dashboard-subtitle'>Real-Time Data Streaming & Spatial-Temporal Anomaly Detector</div>", unsafe_allow_html=True)
+st.markdown("<div class='dashboard-title'>🛡️ AegisStream</div>", unsafe_allow_html=True)
+st.markdown("<div class='dashboard-subtitle'>Real-Time Crisis Intelligence · Spatio-Temporal Anomaly Detection</div>", unsafe_allow_html=True)
 
 # --- METRICS ---
 m_col1, m_col2, m_col3, m_col4, m_col5 = st.columns(5)
@@ -149,17 +225,41 @@ else:
     status_class = "metric-value-ok"
 
 with m_col1:
-    st.markdown(f"<div class='metric-box'><div style='font-size:0.75rem;color:#b0b0c8;text-transform:uppercase;font-weight:600;'>System Alert Level</div><div class='{status_class}'>{status_label}</div></div>", unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class='metric-box'>
+        <div class='metric-label'>System Alert Level</div>
+        <div class='metric-value {status_class}'>{status_label}</div>
+    </div>""", unsafe_allow_html=True)
+
 with m_col2:
-    st.markdown(f"<div class='metric-box'><div style='font-size:0.75rem;color:#b0b0c8;text-transform:uppercase;font-weight:600;'>Active Event Clusters</div><div class='metric-value-info'>{active_cnt}</div></div>", unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class='metric-box'>
+        <div class='metric-label'>Active Clusters</div>
+        <div class='metric-value metric-value-info'>{active_cnt}</div>
+    </div>""", unsafe_allow_html=True)
+
 with m_col3:
-    st.markdown(f"<div class='metric-box'><div style='font-size:0.75rem;color:#b0b0c8;text-transform:uppercase;font-weight:600;'>Pipeline Throughput</div><div class='metric-value-info'>{throughput:.1f} <span style='font-size:0.9rem;'>tweets/s</span></div></div>", unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class='metric-box'>
+        <div class='metric-label'>Throughput</div>
+        <div class='metric-value metric-value-info'>{throughput:.1f} <span style='font-size:0.75rem;color:#4a6a7a;'>posts/s</span></div>
+    </div>""", unsafe_allow_html=True)
+
 with m_col4:
-    st.markdown(f"<div class='metric-box'><div style='font-size:0.75rem;color:#b0b0c8;text-transform:uppercase;font-weight:600;'>Total Streams Processed</div><div class='metric-value-info'>{total_processed}</div></div>", unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class='metric-box'>
+        <div class='metric-label'>Streams Processed</div>
+        <div class='metric-value metric-value-info'>{total_processed:,}</div>
+    </div>""", unsafe_allow_html=True)
+
 with m_col5:
     accuracy = status_data.get("classifier_accuracy", 0.0)
     acc_class = "metric-value-ok" if accuracy >= 70 else "metric-value-warning" if accuracy >= 50 else "metric-value-critical"
-    st.markdown(f"<div class='metric-box'><div style='font-size:0.75rem;color:#b0b0c8;text-transform:uppercase;font-weight:600;'>Classifier Accuracy</div><div class='{acc_class}'>{accuracy:.1f}%</div></div>", unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class='metric-box'>
+        <div class='metric-label'>Classifier Accuracy</div>
+        <div class='metric-value {acc_class}'>{accuracy:.1f}%</div>
+    </div>""", unsafe_allow_html=True)
 
 st.write("")
 
@@ -358,6 +458,7 @@ with col_right:
                 """, unsafe_allow_html=True)
 
     st.write("")
+
     st.markdown("### 💬 Live Social Media Stream")
     feed_html = "<div class='feed-container'>"
 
@@ -368,10 +469,10 @@ with col_right:
             if isinstance(t, dict):
                 cat = t.get("category", "General")
                 badge_class = "badge-general"
-                if cat == "Fire":         badge_class = "badge-fire"
-                elif cat == "Flood":      badge_class = "badge-flood"
+                if cat == "Fire":           badge_class = "badge-fire"
+                elif cat == "Flood":        badge_class = "badge-flood"
                 elif cat == "Civic Unrest": badge_class = "badge-unrest"
-                elif cat == "Outbreak":   badge_class = "badge-outbreak"
+                elif cat == "Outbreak":     badge_class = "badge-outbreak"
 
                 landmark     = t.get("landmark", "Unknown")
                 t_time       = time.strftime("%H:%M:%S", time.localtime(t.get("timestamp", time.time())))
@@ -380,21 +481,19 @@ with col_right:
                 source_badge = "🌐 GDELT" if source == "gdelt" else "🤖 SIM"
                 source_color = "#45f3ff" if source == "gdelt" else "#7a90a4"
 
-                feed_html += f"""
-                <div class='tweet-card'>
-                    <div class='tweet-header'>
-                        <span class='category-badge {badge_class}'>{cat.upper()}</span>
-                        <span class='landmark-tag'>📍 {landmark}</span>
-                        <span style='font-size:0.7rem;color:{source_color};'>{source_badge}</span>
-                        <span class='tweet-time'>{t_time}</span>
-                    </div>
-                    <p class='tweet-text'>{text}</p>
-                </div>
-                """
+                card = "<div class='tweet-card'>"
+                card += "<div class='tweet-header'>"
+                card += f"<span class='category-badge {badge_class}'>{cat.upper()}</span>"
+                card += f"<span class='landmark-tag'>📍 {landmark}</span>"
+                card += f"<span style='font-size:0.7rem;color:{source_color};'>{source_badge}</span>"
+                card += f"<span class='tweet-time'>{t_time}</span>"
+                card += "</div>"
+                card += f"<p class='tweet-text'>{text}</p>"
+                card += "</div>"
+                feed_html += card
 
     feed_html += "</div>"
     st.markdown(feed_html, unsafe_allow_html=True)
-
 
 # --- SIDEBAR ---
 st.sidebar.markdown("<h2 style='color:#66fcf1;'>⚙️ AegisStream Control Panel</h2>", unsafe_allow_html=True)
