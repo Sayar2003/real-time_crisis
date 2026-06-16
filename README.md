@@ -13,6 +13,10 @@ AegisStream is a real-time AI-powered crisis intelligence system that ingests li
 ---
 
 ## 🏗️ System Architecture
+
+![AegisStream Architecture](docs/aegisstream_architecture.png)
+
+
 +------------------+     (Real Events)    +-------------------+
 
 |  GDELT Ingestor  | -------------------> |                   |
