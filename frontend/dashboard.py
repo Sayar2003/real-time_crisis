@@ -481,6 +481,26 @@ with col_right:
             a_time     = time.strftime('%H:%M:%S', time.localtime(a.get('start_time', time.time())))
             llm_summary = a.get("llm_summary", "")
 
+            # Countdown timer
+            elapsed = time.time() - a.get('start_time', time.time())
+            timeout = 300
+            remaining = max(0, int(timeout - elapsed))
+
+            mins_left = remaining // 60
+            secs_left = remaining % 60
+
+            countdown_str = (
+                f"{mins_left}m {secs_left}s"
+                if mins_left > 0
+                else f"{secs_left}s"
+            )
+
+            countdown_color = (
+                "#ff4757" if remaining < 60
+                else "#ffa502" if remaining < 120
+                else "#2ed573"
+            ) 
+
             st.error(f"""
             🔴 **{a_cat} ALERT — {a_id}**
             * **Epicenter:** {a_landmark}
@@ -490,30 +510,108 @@ with col_right:
             * **Since:** {a_time}
             """)
 
+            st.markdown(f"""
+            <div style='display:flex;justify-content:space-between;align-items:center;
+            background:#0a0c10;border:1px solid #1a2a3a;border-radius:6px;
+            padding:6px 12px;margin-top:-8px;margin-bottom:8px;'>
+            <span style='font-size:0.65rem;color:#4a6a7a;
+            font-family:JetBrains Mono,monospace;
+            text-transform:uppercase;letter-spacing:0.08em;'>
+            Auto-resolves in
+            </span>
+
+            <span style='font-size:0.85rem;color:{countdown_color};
+            font-family:JetBrains Mono,monospace;
+            font-weight:600;'>
+            {countdown_str}
+            </span>
+            </div>
+            """, unsafe_allow_html=True)
+
             if llm_summary:
                 st.markdown(f"""
                 <div style='background:#0a1020;border-left:3px solid #66fcf1;
                 padding:10px 14px;border-radius:0 6px 6px 0;
-                font-size:12px;color:#8aa4b8;margin-top:-8px;margin-bottom:12px;
+                font-size:12px;color:#8aa4b8;margin-bottom:12px;
                 font-family:Inter,sans-serif;line-height:1.5;'>
                 <span style='color:#66fcf1;font-weight:600;font-size:11px;
                 font-family:JetBrains Mono,monospace;letter-spacing:0.05em;'>
-                🤖 AI BRIEFING</span><br/><br/>{llm_summary}
+                🤖 AI BRIEFING
+                </span><br/><br/>
+                {llm_summary}
                 </div>
                 """, unsafe_allow_html=True)
 
     st.write("")
     st.markdown("<div class='section-header'><span class='live-dot'></span>Live Signal Feed</div>", unsafe_allow_html=True)
 
+    # Category filter pills
+    filter_cols = st.columns(6)
+    filter_options = ["All", "Fire", "Flood", "Civic Unrest", "Outbreak", "General"]
+    filter_colors  = {
+        "All":         ("#66fcf1", "#0a1a20"),
+        "Fire":        ("#ff4757", "#2d1515"),
+        "Flood":       ("#1e90ff", "#152040"),
+        "Civic Unrest":("#ffa502", "#2d2515"),
+        "Outbreak":    ("#a855f7", "#251535"),
+        "General":     ("#a0aec0", "#2d3748"),
+    }
+
+    if "feed_filter" not in st.session_state:
+        st.session_state.feed_filter = "All"
+
+    for i, opt in enumerate(filter_options):
+        with filter_cols[i]:
+            color, bg = filter_colors[opt]
+            is_active = st.session_state.feed_filter == opt
+            border = f"2px solid {color}" if is_active else f"1px solid {color}30"
+            opacity = "1" if is_active else "0.5"
+            if st.button(opt, key=f"filter_{opt}", use_container_width=True):
+                st.session_state.feed_filter = opt
+                st.rerun()
+            st.markdown(f"""
+            <style>
+            div[data-testid="stButton"] button[kind="secondary"]:has(+ *):nth-child({i+1}) {{
+                background: {bg} !important;
+                border: {border} !important;
+                color: {color} !important;
+                opacity: {opacity};
+            }}
+            </style>
+            """, unsafe_allow_html=True)
+
+             # --- SEARCH BAR ---
+    search_query = st.text_input(
+        "Search feed",
+        placeholder="Search posts by keyword...",
+        label_visibility="collapsed",
+        key="feed_search"
+    )
+
+    # --- APPLY FILTER + SEARCH ---
+    active_filter = st.session_state.get("feed_filter", "All")
+    filtered_tweets = tweets_data if active_filter == "All" else [
+        t for t in tweets_data if t.get("category") == active_filter
+    ]
+    if search_query:
+        filtered_tweets = [
+            t for t in filtered_tweets
+            if search_query.lower() in t.get("text", "").lower()
+            or search_query.lower() in t.get("landmark", "").lower()
+        ]
+
+
+
     feed_html = "<div class='feed-container'>"
-    if len(tweets_data) == 0:
-        feed_html += "<p style='color:#4a6a7a;font-size:0.8rem;font-family:JetBrains Mono,monospace;'>Waiting for stream ingestion...</p>"
+
+    if len(filtered_tweets) == 0:
+        feed_html += "<p style='color:#4a6a7a;font-size:0.8rem;font-family:JetBrains Mono,monospace;'>No posts matching filter...</p>"
     else:
         card_cat_classes = {
             "Fire": "tweet-card-fire", "Flood": "tweet-card-flood",
             "Civic Unrest": "tweet-card-unrest", "Outbreak": "tweet-card-outbreak"
         }
-        for t in tweets_data[:30]:
+        for t in filtered_tweets[:30]:
             if isinstance(t, dict):
                 cat          = t.get("category", "General")
                 badge_class  = {"Fire":"badge-fire","Flood":"badge-flood","Civic Unrest":"badge-unrest","Outbreak":"badge-outbreak"}.get(cat, "badge-general")
