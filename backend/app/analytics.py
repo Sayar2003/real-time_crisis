@@ -199,37 +199,37 @@ class AnalyticsEngine:
                 if matched_id:
                     # Update existing alert
                     alert = self.active_alerts[matched_id]
-                    alert["lat"] = lat
-                    alert["lon"] = lon
-                    alert["tweet_count"] = count
-                    alert["tweets"] = cluster_tweets
-                    alert["z_score"] = z_score
-                    alert["landmark"] = self._extract_landmark(cluster_tweets)  # ← add this line
+                    alert["lat"]          = lat
+                    alert["lon"]          = lon
+                    alert["tweet_count"]  = count
+                    alert["tweets"]       = cluster_tweets
+                    alert["z_score"]      = z_score
+                    alert["landmark"]     = self._extract_landmark(cluster_tweets)
                     alert["last_updated"] = current_time
                     matched_alert_ids.add(matched_id)
                 else:
-                  # Create new alert
-                  alert_id = f"ALERT-{self.alert_id_counter}"
-                  self.alert_id_counter += 1
+                    # Create new alert
+                    alert_id = f"ALERT-{self.alert_id_counter}"
+                    self.alert_id_counter += 1
 
-                  landmark = self._extract_landmark(cluster_tweets)
+                    landmark = self._extract_landmark(cluster_tweets)
 
-                  self.active_alerts[alert_id] = {
-                  "id": alert_id,
-                  "category": category,
-                  "lat": lat,
-                  "lon": lon,
-                  "tweet_count": count,
-                  "tweets": cluster_tweets,
-                  "z_score": z_score,
-                  "landmark": landmark,
-                  "status": "Active",
-                  "start_time": current_time,
-                  "last_updated": current_time
-                }
-                matched_alert_ids.add(alert_id)
-                logger.info(f"🚨 NEW ALERT RAISED: {alert_id} ({category}) at ({lat:.4f}, {lon:.4f}) | Landmark: {landmark} | Z-score {z_score:.2f}")
-
+                    self.active_alerts[alert_id] = {
+                        "id":           alert_id,
+                        "category":     category,
+                        "lat":          lat,
+                        "lon":          lon,
+                        "tweet_count":  count,
+                        "tweets":       cluster_tweets,
+                        "z_score":      z_score,
+                        "landmark":     landmark,
+                        "status":       "Active",
+                        "start_time":   current_time,
+                        "last_updated": current_time
+                    }
+                    matched_alert_ids.add(alert_id)
+                    asyncio.create_task(self._attach_llm_summary(alert_id))
+                    logger.info(f"🚨 NEW ALERT RAISED: {alert_id} ({category}) at ({lat:.4f}, {lon:.4f}) | Landmark: {landmark} | Z-score {z_score:.2f}")
                 # Schedule Groq LLM summary generation (non-blocking thread)
                 asyncio.create_task(self._attach_llm_summary(alert_id))
 
