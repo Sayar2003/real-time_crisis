@@ -557,55 +557,69 @@ with col_right:
         "General":     ("#a0aec0", "#2d3748"),
     }
 
+    # --- FILTER PILLS ---
     if "feed_filter" not in st.session_state:
         st.session_state.feed_filter = "All"
+    if "feed_search" not in st.session_state:
+        st.session_state.feed_search = ""
 
-    for i, opt in enumerate(filter_options):
-        with filter_cols[i]:
-            color, bg = filter_colors[opt]
-            is_active = st.session_state.feed_filter == opt
-            border = f"2px solid {color}" if is_active else f"1px solid {color}30"
-            opacity = "1" if is_active else "0.5"
-            if st.button(opt, key=f"filter_{opt}", use_container_width=True):
-                st.session_state.feed_filter = opt
-                st.rerun()
-            st.markdown(f"""
-            <style>
-            div[data-testid="stButton"] button[kind="secondary"]:has(+ *):nth-child({i+1}) {{
-                background: {bg} !important;
-                border: {border} !important;
-                color: {color} !important;
-                opacity: {opacity};
-            }}
-            </style>
-            """, unsafe_allow_html=True)
+    filter_map = {
+        "All": "All", "🔥 Fire": "Fire", "🌊 Flood": "Flood",
+        "📣 Unrest": "Civic Unrest", "🦠 Outbreak": "Outbreak", "💬 General": "General"
+    }
 
-             # --- SEARCH BAR ---
-    search_query = st.text_input(
-        "Search feed",
-        placeholder="Search posts by keyword...",
+    row1 = st.columns(3)
+    row2 = st.columns(3)
+    all_pill_cols = row1 + row2
+
+    for i, (label, value) in enumerate(filter_map.items()):
+        with all_pill_cols[i]:
+            is_active = st.session_state.feed_filter == value
+            if st.button(
+                label,
+                key=f"fpill_{label}",
+                use_container_width=True,
+                type="primary" if is_active else "secondary"
+            ):
+                st.session_state.feed_filter = value
+
+    # --- SEARCH BAR ---
+    search_input = st.text_input(
+        "Search",
+        value=st.session_state.feed_search,
+        placeholder="🔍  Search posts by keyword or location...",
         label_visibility="collapsed",
-        key="feed_search"
+        key="feed_search_input"
     )
+    st.session_state.feed_search = search_input
 
     # --- APPLY FILTER + SEARCH ---
-    active_filter = st.session_state.get("feed_filter", "All")
-    filtered_tweets = tweets_data if active_filter == "All" else [
-        t for t in tweets_data if t.get("category") == active_filter
-    ]
-    if search_query:
+    current_filter = st.session_state.feed_filter
+    current_search = st.session_state.feed_search.strip().lower()
+
+    # Step 1 — category filter
+    if current_filter == "All":
+        filtered_tweets = list(tweets_data)
+    else:
         filtered_tweets = [
-            t for t in filtered_tweets
-            if search_query.lower() in t.get("text", "").lower()
-            or search_query.lower() in t.get("landmark", "").lower()
+            t for t in tweets_data
+            if isinstance(t, dict) and t.get("category") == current_filter
         ]
 
+    # Step 2 — keyword search on top
+    if current_search:
+        filtered_tweets = [
+            t for t in filtered_tweets
+            if current_search in t.get("text", "").lower()
+            or current_search in t.get("landmark", "").lower()
+            or current_search in t.get("category", "").lower()
+        ]
 
-
+    # --- FEED HTML ---
     feed_html = "<div class='feed-container'>"
 
     if len(filtered_tweets) == 0:
-        feed_html += "<p style='color:#4a6a7a;font-size:0.8rem;font-family:JetBrains Mono,monospace;'>No posts matching filter...</p>"
+        feed_html += f"<p style='color:#4a6a7a;font-size:0.8rem;font-family:JetBrains Mono,monospace;'>No posts matching '{current_filter}'{' · ' + current_search if current_search else ''}...</p>"
     else:
         card_cat_classes = {
             "Fire": "tweet-card-fire", "Flood": "tweet-card-flood",
