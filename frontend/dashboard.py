@@ -37,6 +37,48 @@ CAT_COLORS = {
     "Outbreak":     "#a855f7"
 }
 
+# All monitored landmarks with coordinates for map search
+LANDMARK_COORDS = {
+    # London
+    "big ben":           (51.5007, -0.1246),
+    "hyde park":         (51.5073, -0.1657),
+    "london eye":        (51.5033, -0.1195),
+    "tower bridge":      (51.5055, -0.0754),
+    "buckingham palace": (51.5014, -0.1419),
+    "trafalgar square":  (51.5080, -0.1281),
+    "british museum":    (51.5194, -0.1270),
+    "soho":              (51.5136, -0.1365),
+    "covent garden":     (51.5117, -0.1240),
+    "piccadilly circus": (51.5101, -0.1342),
+    # New Delhi
+    "india gate":        (28.6129, 77.2295),
+    "connaught place":   (28.6315, 77.2167),
+    "red fort":          (28.6562, 77.2410),
+    "chandni chowk":     (28.6506, 77.2334),
+    "nehru place":       (28.5491, 77.2519),
+    "dwarka":            (28.5921, 77.0460),
+    # Dhaka
+    "motijheel":         (23.7338, 90.4177),
+    "gulshan":           (23.7808, 90.4152),
+    "dhanmondi":         (23.7461, 90.3742),
+    "old dhaka":         (23.7104, 90.4074),
+    "mirpur":            (23.8223, 90.3654),
+    "shahbag":           (23.7388, 90.3950),
+    # Jakarta
+    "monas":             (-6.1754, 106.8272),
+    "kota tua":          (-6.1352, 106.8133),
+    "glodok":            (-6.1489, 106.8167),
+    "sudirman":          (-6.2088, 106.8175),
+    "kemang":            (-6.2607, 106.8133),
+    "tanah abang":       (-6.1864, 106.8133),
+    # Cities
+    "london":            (51.5074, -0.1278),
+    "new delhi":         (28.6139, 77.2090),
+    "delhi":             (28.6139, 77.2090),
+    "dhaka":             (23.8103, 90.4125),
+    "jakarta":           (-6.2088, 106.8456),
+}
+
 # ── CSS ─────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
@@ -351,7 +393,14 @@ with col_left:
     df_alerts = pd.DataFrame(alerts_list) if alerts_list else pd.DataFrame(
         columns=["lat","lon","category","tweet_count","z_score","landmark"])
 
-    if alerts_list:
+    # Check if search has a map focus
+    map_focus = st.session_state.get("map_focus")
+
+    if map_focus:
+        center_lat = map_focus["lat"]
+        center_lon = map_focus["lon"]
+        zoom = map_focus["zoom"]
+    elif alerts_list:
         center_lat = np.mean([a["lat"] for a in alerts_list])
         center_lon = np.mean([a["lon"] for a in alerts_list])
         zoom = 11.0
@@ -562,6 +611,8 @@ with col_right:
         st.session_state.feed_filter = "All"
     if "feed_search" not in st.session_state:
         st.session_state.feed_search = ""
+    if "map_focus" not in st.session_state:
+        st.session_state.map_focus = None
 
     filter_map = {
         "All": "All", "🔥 Fire": "Fire", "🌊 Flood": "Flood",
@@ -606,7 +657,7 @@ with col_right:
             if isinstance(t, dict) and t.get("category") == current_filter
         ]
 
-    # Step 2 — keyword search on top
+    # Step 2 — keyword search + map focus
     if current_search:
         filtered_tweets = [
             t for t in filtered_tweets
@@ -614,6 +665,37 @@ with col_right:
             or current_search in t.get("landmark", "").lower()
             or current_search in t.get("category", "").lower()
         ]
+
+        # Move map to matching landmark or city
+        matched_location = None
+        for landmark_key, coords in LANDMARK_COORDS.items():
+            if current_search in landmark_key or landmark_key in current_search:
+                matched_location = coords
+                break
+
+        # Also check if any filtered tweet has matching coordinates
+        if not matched_location and filtered_tweets:
+            match_with_coords = [
+                t for t in filtered_tweets
+                if t.get("lat") is not None and t.get("lon") is not None
+            ]
+            if match_with_coords:
+                matched_location = (
+                    match_with_coords[0]["lat"],
+                    match_with_coords[0]["lon"]
+                )
+
+        if matched_location:
+            st.session_state.map_focus = {
+                "lat":  matched_location[0],
+                "lon":  matched_location[1],
+                "zoom": 13.0
+            }
+        else:
+            st.session_state.map_focus = None
+    else:
+        # Clear map focus when search is cleared
+        st.session_state.map_focus = None
 
     # --- FEED HTML ---
     feed_html = "<div class='feed-container'>"
