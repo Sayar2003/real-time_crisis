@@ -307,6 +307,11 @@ def trigger_injection(category, landmark, duration=30):
 
 # ── Load state ────────────────────────────────────────────────────────────────
 status_data = fetch_status()
+
+# Sync search value to dedicated map key every rerun
+if "feed_search_input" in st.session_state:
+    st.session_state["map_search_value"] = st.session_state["feed_search_input"]
+
 tweets_data = fetch_tweets()
 alerts_data = fetch_alerts()
 
@@ -362,6 +367,21 @@ col_left, col_right = st.columns([0.65, 0.35])
 with col_left:
     st.markdown("<div class='section-header'>🗺️ Spatio-Temporal Event Epicenters</div>", unsafe_allow_html=True)
 
+    # ── Pre-compute map focus from search state (must happen before map renders) ──
+    current_search_for_map = st.session_state.get("map_search_value", "").strip().lower()
+    if current_search_for_map:
+        map_match = None
+        for landmark_key, coords in LANDMARK_COORDS.items():
+            if current_search_for_map in landmark_key or landmark_key in current_search_for_map:
+                map_match = coords
+                break
+        if map_match:
+            st.session_state.map_focus = {"lat": map_match[0], "lon": map_match[1], "zoom": 13.0}
+        else:
+            st.session_state.map_focus = None
+    else:
+        st.session_state.map_focus = None
+
     tweets_list, alerts_list = [], []
 
     for t in tweets_data:
@@ -393,7 +413,7 @@ with col_left:
     df_alerts = pd.DataFrame(alerts_list) if alerts_list else pd.DataFrame(
         columns=["lat","lon","category","tweet_count","z_score","landmark"])
 
-    # Check if search has a map focus
+    # ── Map centroid ──
     map_focus = st.session_state.get("map_focus")
 
     if map_focus:
@@ -413,7 +433,12 @@ with col_left:
 
     st.pydeck_chart(pdk.Deck(
         map_style="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
-        initial_view_state=pdk.ViewState(latitude=center_lat, longitude=center_lon, zoom=zoom, pitch=20),
+        initial_view_state=pdk.ViewState(
+            latitude=center_lat,
+            longitude=center_lon,
+            zoom=zoom,
+            pitch=20
+        ),
         layers=[
             pdk.Layer("HeatmapLayer", data=df_tweets, get_position="[lon, lat]",
                       get_weight=1, radiusPixels=60, opacity=0.4),
@@ -428,7 +453,7 @@ with col_left:
             "style": {"background-color":"#0d1520","color":"#ffffff","border":"1px solid #66fcf1","border-radius":"6px","padding":"8px","font-family":"JetBrains Mono, monospace","font-size":"12px"}
         },
         height=480
-    ))
+    ), key=f"map_{center_lat:.4f}_{center_lon:.4f}_{zoom}")
 
     # ── Charts ────────────────────────────────────────────────────────────────
     st.write("")
@@ -666,37 +691,7 @@ with col_right:
             or current_search in t.get("category", "").lower()
         ]
 
-        # Move map to matching landmark or city
-        matched_location = None
-        for landmark_key, coords in LANDMARK_COORDS.items():
-            if current_search in landmark_key or landmark_key in current_search:
-                matched_location = coords
-                break
-
-        # Also check if any filtered tweet has matching coordinates
-        if not matched_location and filtered_tweets:
-            match_with_coords = [
-                t for t in filtered_tweets
-                if t.get("lat") is not None and t.get("lon") is not None
-            ]
-            if match_with_coords:
-                matched_location = (
-                    match_with_coords[0]["lat"],
-                    match_with_coords[0]["lon"]
-                )
-
-        if matched_location:
-            st.session_state.map_focus = {
-                "lat":  matched_location[0],
-                "lon":  matched_location[1],
-                "zoom": 13.0
-            }
-        else:
-            st.session_state.map_focus = None
-    else:
-        # Clear map focus when search is cleared
-        st.session_state.map_focus = None
-
+        
     # --- FEED HTML ---
     feed_html = "<div class='feed-container'>"
 
