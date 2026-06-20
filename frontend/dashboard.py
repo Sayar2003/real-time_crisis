@@ -308,9 +308,13 @@ def trigger_injection(category, landmark, duration=30):
 # ── Load state ────────────────────────────────────────────────────────────────
 status_data = fetch_status()
 
-# Sync search value to dedicated map key every rerun
-if "feed_search_input" in st.session_state:
-    st.session_state["map_search_value"] = st.session_state["feed_search_input"]
+# Initialize session state defaults
+if "feed_filter" not in st.session_state:
+    st.session_state.feed_filter = "All"
+if "map_search_value" not in st.session_state:
+    st.session_state.map_search_value = ""
+if "map_focus" not in st.session_state:
+    st.session_state.map_focus = None
 
 tweets_data = fetch_tweets()
 alerts_data = fetch_alerts()
@@ -368,7 +372,7 @@ with col_left:
     st.markdown("<div class='section-header'>🗺️ Spatio-Temporal Event Epicenters</div>", unsafe_allow_html=True)
 
     # ── Pre-compute map focus from search state (must happen before map renders) ──
-    current_search_for_map = st.session_state.get("map_search_value", "").strip().lower()
+    current_search_for_map = st.session_state.get("map_search_value", "")
     if current_search_for_map:
         map_match = None
         for landmark_key, coords in LANDMARK_COORDS.items():
@@ -619,25 +623,6 @@ with col_right:
     st.write("")
     st.markdown("<div class='section-header'><span class='live-dot'></span>Live Signal Feed</div>", unsafe_allow_html=True)
 
-    # Category filter pills
-    filter_cols = st.columns(6)
-    filter_options = ["All", "Fire", "Flood", "Civic Unrest", "Outbreak", "General"]
-    filter_colors  = {
-        "All":         ("#66fcf1", "#0a1a20"),
-        "Fire":        ("#ff4757", "#2d1515"),
-        "Flood":       ("#1e90ff", "#152040"),
-        "Civic Unrest":("#ffa502", "#2d2515"),
-        "Outbreak":    ("#a855f7", "#251535"),
-        "General":     ("#a0aec0", "#2d3748"),
-    }
-
-    # --- FILTER PILLS ---
-    if "feed_filter" not in st.session_state:
-        st.session_state.feed_filter = "All"
-    if "feed_search" not in st.session_state:
-        st.session_state.feed_search = ""
-    if "map_focus" not in st.session_state:
-        st.session_state.map_focus = None
 
     filter_map = {
         "All": "All", "🔥 Fire": "Fire", "🌊 Flood": "Flood",
@@ -662,16 +647,21 @@ with col_right:
     # --- SEARCH BAR ---
     search_input = st.text_input(
         "Search",
-        value=st.session_state.feed_search,
         placeholder="🔍  Search posts by keyword or location...",
         label_visibility="collapsed",
         key="feed_search_input"
     )
-    st.session_state.feed_search = search_input
+
+    # Update map search value immediately after widget renders
+    current_search = search_input.strip().lower() if search_input else ""
+    st.session_state.map_search_value = current_search
+
+    # Faster refresh when searching so map updates quickly
+    if current_search:
+        st_autorefresh(interval=1500, key="search_refresh")
 
     # --- APPLY FILTER + SEARCH ---
     current_filter = st.session_state.feed_filter
-    current_search = st.session_state.feed_search.strip().lower()
 
     # Step 1 — category filter
     if current_filter == "All":
