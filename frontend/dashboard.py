@@ -656,9 +656,6 @@ with col_right:
     current_search = search_input.strip().lower() if search_input else ""
     st.session_state.map_search_value = current_search
 
-    # Faster refresh when searching so map updates quickly
-    if current_search:
-        st_autorefresh(interval=1500, key="search_refresh")
 
     # --- APPLY FILTER + SEARCH ---
     current_filter = st.session_state.feed_filter
@@ -725,6 +722,28 @@ st.sidebar.markdown("""
     <div style='font-size:0.65rem;color:#4a6a7a;text-transform:uppercase;letter-spacing:0.1em;margin-top:2px;'>Control Panel</div>
 </div>
 """, unsafe_allow_html=True)
+
+map_search = st.sidebar.text_input(
+    "Map Search",
+    placeholder="Search city or landmark...",
+    label_visibility="collapsed",
+    key="sidebar_map_search"
+)
+
+if map_search and map_search.strip():
+    q = map_search.strip().lower()
+    matched = None
+    for landmark_key, coords in LANDMARK_COORDS.items():
+        if q in landmark_key or landmark_key in q:
+            matched = coords
+            break
+    if matched:
+        st.session_state.map_focus = {"lat": matched[0], "lon": matched[1], "zoom": 13.0}
+        st.sidebar.success(f"📍 Map focused on: {map_search.title()}")
+    else:
+        st.sidebar.warning("Location not found.")
+else:
+    st.session_state.map_focus = None
 
 if status_data:
     uptime = status_data.get('uptime_seconds', 0)
