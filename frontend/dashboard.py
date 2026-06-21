@@ -37,48 +37,6 @@ CAT_COLORS = {
     "Outbreak":     "#a855f7"
 }
 
-# All monitored landmarks with coordinates for map search
-LANDMARK_COORDS = {
-    # London
-    "big ben":           (51.5007, -0.1246),
-    "hyde park":         (51.5073, -0.1657),
-    "london eye":        (51.5033, -0.1195),
-    "tower bridge":      (51.5055, -0.0754),
-    "buckingham palace": (51.5014, -0.1419),
-    "trafalgar square":  (51.5080, -0.1281),
-    "british museum":    (51.5194, -0.1270),
-    "soho":              (51.5136, -0.1365),
-    "covent garden":     (51.5117, -0.1240),
-    "piccadilly circus": (51.5101, -0.1342),
-    # New Delhi
-    "india gate":        (28.6129, 77.2295),
-    "connaught place":   (28.6315, 77.2167),
-    "red fort":          (28.6562, 77.2410),
-    "chandni chowk":     (28.6506, 77.2334),
-    "nehru place":       (28.5491, 77.2519),
-    "dwarka":            (28.5921, 77.0460),
-    # Dhaka
-    "motijheel":         (23.7338, 90.4177),
-    "gulshan":           (23.7808, 90.4152),
-    "dhanmondi":         (23.7461, 90.3742),
-    "old dhaka":         (23.7104, 90.4074),
-    "mirpur":            (23.8223, 90.3654),
-    "shahbag":           (23.7388, 90.3950),
-    # Jakarta
-    "monas":             (-6.1754, 106.8272),
-    "kota tua":          (-6.1352, 106.8133),
-    "glodok":            (-6.1489, 106.8167),
-    "sudirman":          (-6.2088, 106.8175),
-    "kemang":            (-6.2607, 106.8133),
-    "tanah abang":       (-6.1864, 106.8133),
-    # Cities
-    "london":            (51.5074, -0.1278),
-    "new delhi":         (28.6139, 77.2090),
-    "delhi":             (28.6139, 77.2090),
-    "dhaka":             (23.8103, 90.4125),
-    "jakarta":           (-6.2088, 106.8456),
-}
-
 # ── CSS ─────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
@@ -307,15 +265,6 @@ def trigger_injection(category, landmark, duration=30):
 
 # ── Load state ────────────────────────────────────────────────────────────────
 status_data = fetch_status()
-
-# Initialize session state defaults
-if "feed_filter" not in st.session_state:
-    st.session_state.feed_filter = "All"
-if "map_search_value" not in st.session_state:
-    st.session_state.map_search_value = ""
-if "map_focus" not in st.session_state:
-    st.session_state.map_focus = None
-
 tweets_data = fetch_tweets()
 alerts_data = fetch_alerts()
 
@@ -405,11 +354,8 @@ with col_left:
     # ── Map centroid ──
     map_focus = st.session_state.get("map_focus")
 
-    if map_focus:
-        center_lat = map_focus["lat"]
-        center_lon = map_focus["lon"]
-        zoom = map_focus["zoom"]
-    elif alerts_list:
+    
+    if alerts_list:
         center_lat = np.mean([a["lat"] for a in alerts_list])
         center_lon = np.mean([a["lon"] for a in alerts_list])
         zoom = 11.0
@@ -608,73 +554,15 @@ with col_right:
     st.write("")
     st.markdown("<div class='section-header'><span class='live-dot'></span>Live Signal Feed</div>", unsafe_allow_html=True)
 
-
-    filter_map = {
-        "All": "All", "🔥 Fire": "Fire", "🌊 Flood": "Flood",
-        "📣 Unrest": "Civic Unrest", "🦠 Outbreak": "Outbreak", "💬 General": "General"
-    }
-
-    row1 = st.columns(3)
-    row2 = st.columns(3)
-    all_pill_cols = row1 + row2
-
-    for i, (label, value) in enumerate(filter_map.items()):
-        with all_pill_cols[i]:
-            is_active = st.session_state.feed_filter == value
-            if st.button(
-                label,
-                key=f"fpill_{label}",
-                use_container_width=True,
-                type="primary" if is_active else "secondary"
-            ):
-                st.session_state.feed_filter = value
-
-    # --- SEARCH BAR ---
-    search_input = st.text_input(
-        "Search",
-        placeholder="🔍  Search posts by keyword or location...",
-        label_visibility="collapsed",
-        key="feed_search_input"
-    )
-
-    # Update map search value immediately after widget renders
-    current_search = search_input.strip().lower() if search_input else ""
-    st.session_state.map_search_value = current_search
-
-
-    # --- APPLY FILTER + SEARCH ---
-    current_filter = st.session_state.feed_filter
-
-    # Step 1 — category filter
-    if current_filter == "All":
-        filtered_tweets = list(tweets_data)
-    else:
-        filtered_tweets = [
-            t for t in tweets_data
-            if isinstance(t, dict) and t.get("category") == current_filter
-        ]
-
-    # Step 2 — keyword search + map focus
-    if current_search:
-        filtered_tweets = [
-            t for t in filtered_tweets
-            if current_search in t.get("text", "").lower()
-            or current_search in t.get("landmark", "").lower()
-            or current_search in t.get("category", "").lower()
-        ]
-
-        
-    # --- FEED HTML ---
     feed_html = "<div class='feed-container'>"
-
-    if len(filtered_tweets) == 0:
-        feed_html += f"<p style='color:#4a6a7a;font-size:0.8rem;font-family:JetBrains Mono,monospace;'>No posts matching '{current_filter}'{' · ' + current_search if current_search else ''}...</p>"
+    if len(tweets_data) == 0:
+        feed_html += "<p style='color:#4a6a7a;font-size:0.8rem;font-family:JetBrains Mono,monospace;'>Waiting for stream ingestion...</p>"
     else:
         card_cat_classes = {
             "Fire": "tweet-card-fire", "Flood": "tweet-card-flood",
             "Civic Unrest": "tweet-card-unrest", "Outbreak": "tweet-card-outbreak"
         }
-        for t in filtered_tweets[:30]:
+        for t in tweets_data[:30]:
             if isinstance(t, dict):
                 cat          = t.get("category", "General")
                 badge_class  = {"Fire":"badge-fire","Flood":"badge-flood","Civic Unrest":"badge-unrest","Outbreak":"badge-outbreak"}.get(cat, "badge-general")
