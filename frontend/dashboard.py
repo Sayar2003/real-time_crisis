@@ -371,21 +371,6 @@ col_left, col_right = st.columns([0.65, 0.35])
 with col_left:
     st.markdown("<div class='section-header'>🗺️ Spatio-Temporal Event Epicenters</div>", unsafe_allow_html=True)
 
-    # ── Pre-compute map focus from search state (must happen before map renders) ──
-    current_search_for_map = st.session_state.get("map_search_value", "")
-    if current_search_for_map:
-        map_match = None
-        for landmark_key, coords in LANDMARK_COORDS.items():
-            if current_search_for_map in landmark_key or landmark_key in current_search_for_map:
-                map_match = coords
-                break
-        if map_match:
-            st.session_state.map_focus = {"lat": map_match[0], "lon": map_match[1], "zoom": 13.0}
-        else:
-            st.session_state.map_focus = None
-    else:
-        st.session_state.map_focus = None
-
     tweets_list, alerts_list = [], []
 
     for t in tweets_data:
