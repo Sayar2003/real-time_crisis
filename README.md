@@ -12,17 +12,6 @@ AegisStream is a real-time AI-powered crisis intelligence system that ingests li
 
 ---
 
-## 📸 Screenshots
-
-### Main Dashboard
-
-
-### Active Alert with AI Briefing
-
-
-### Live Heatmap
-
-
 ## 🏗️ System Architecture
 
 ![AegisStream Architecture](docs/aegisstream_architecture.png)
