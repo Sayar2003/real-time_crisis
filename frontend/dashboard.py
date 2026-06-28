@@ -589,34 +589,6 @@ with col_right:
     st.markdown(feed_html, unsafe_allow_html=True)
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
-st.sidebar.markdown("""
-<div style='padding:4px 0 16px 0;'>
-    <div style='font-size:1.1rem;font-weight:600;color:#66fcf1;font-family:Inter,sans-serif;letter-spacing:-0.3px;'>🛡️ AegisStream</div>
-    <div style='font-size:0.65rem;color:#4a6a7a;text-transform:uppercase;letter-spacing:0.1em;margin-top:2px;'>Control Panel</div>
-</div>
-""", unsafe_allow_html=True)
-
-map_search = st.sidebar.text_input(
-    "Map Search",
-    placeholder="Search city or landmark...",
-    label_visibility="collapsed",
-    key="sidebar_map_search"
-)
-
-if map_search and map_search.strip():
-    q = map_search.strip().lower()
-    matched = None
-    for landmark_key, coords in LANDMARK_COORDS.items():
-        if q in landmark_key or landmark_key in q:
-            matched = coords
-            break
-    if matched:
-        st.session_state.map_focus = {"lat": matched[0], "lon": matched[1], "zoom": 13.0}
-        st.sidebar.success(f"📍 Map focused on: {map_search.title()}")
-    else:
-        st.sidebar.warning("Location not found.")
-else:
-    st.session_state.map_focus = None
 
 if status_data:
     uptime = status_data.get('uptime_seconds', 0)
@@ -684,22 +656,19 @@ font-family:JetBrains Mono,monospace;margin-bottom:8px;margin-top:4px;'>Crisis I
 
 inject_cat = st.sidebar.selectbox("Category", ["Fire", "Flood", "Civic Unrest", "Outbreak"], label_visibility="collapsed")
 inject_landmark = st.sidebar.selectbox("Landmark", [
-    "── London ──", "Big Ben", "Hyde Park", "London Eye", "Tower Bridge",
+    "Big Ben", "Hyde Park", "London Eye", "Tower Bridge",
     "Trafalgar Square", "Soho", "Piccadilly Circus",
-    "── New Delhi ──", "India Gate", "Connaught Place", "Red Fort", "Chandni Chowk",
-    "── Dhaka ──", "Motijheel", "Gulshan", "Dhanmondi", "Old Dhaka",
-    "── Jakarta ──", "Monas", "Kota Tua", "Sudirman", "Kemang",
+    "India Gate", "Connaught Place", "Red Fort", "Chandni Chowk",
+    "Motijheel", "Gulshan", "Dhanmondi", "Old Dhaka",
+    "Monas", "Kota Tua", "Sudirman", "Kemang",
 ], label_visibility="collapsed")
 inject_duration = st.sidebar.slider("Duration (seconds)", 15, 60, 30)
 
 if st.sidebar.button("🚨 Inject Crisis Event", use_container_width=True, type="primary"):
-    if "──" not in inject_landmark:
-        if trigger_injection(inject_cat, inject_landmark, inject_duration):
-            st.sidebar.success(f"✓ {inject_cat} injected at {inject_landmark}")
-        else:
-            st.sidebar.error("Injection failed.")
+    if trigger_injection(inject_cat, inject_landmark, inject_duration):
+        st.sidebar.success(f"✓ {inject_cat} injected at {inject_landmark}")
     else:
-        st.sidebar.warning("Please select a landmark.")
+        st.sidebar.error("Injection failed.")
 
 st.sidebar.markdown("""
 <div style='font-size:0.65rem;color:#4a6a7a;text-transform:uppercase;letter-spacing:0.1em;
@@ -709,15 +678,23 @@ font-family:JetBrains Mono,monospace;margin-bottom:8px;margin-top:12px;'>Quick P
 if st.sidebar.button("🔥 Fire — London Eye", use_container_width=True):
     if trigger_injection("Fire", "London Eye", 30):
         st.sidebar.success("✓ Fire at London Eye")
+    else:
+        st.sidebar.error("Failed — check backend connection")
 
 if st.sidebar.button("🌊 Flood — Big Ben", use_container_width=True):
     if trigger_injection("Flood", "Big Ben", 40):
         st.sidebar.success("✓ Flood near Big Ben")
+    else:
+        st.sidebar.error("Failed — check backend connection")    
 
 if st.sidebar.button("📣 Unrest — Trafalgar Sq", use_container_width=True):
     if trigger_injection("Civic Unrest", "Trafalgar Square", 30):
         st.sidebar.success("✓ Unrest at Trafalgar Square")
+    else:
+        st.sidebar.error("Failed — check backend connection")
 
 if st.sidebar.button("🦠 Outbreak — India Gate", use_container_width=True):
     if trigger_injection("Outbreak", "India Gate", 30):
         st.sidebar.success("✓ Outbreak at India Gate")
+    else:
+        st.sidebar.error("Failed — check backend connection")
