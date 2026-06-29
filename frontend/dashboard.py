@@ -14,6 +14,15 @@ import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
 import pydeck as pdk
 
+# Disable auto-refresh temporarily when inject button was just clicked
+if "last_inject_time" not in st.session_state:
+    st.session_state.last_inject_time = 0
+
+# Only auto-refresh if no injection happened in last 3 seconds
+time_since_inject = time.time() - st.session_state.last_inject_time
+if time_since_inject > 3:
+    st_autorefresh(interval=5000, key="data_refresh_trigger")
+
 st.set_page_config(
     page_title="AegisStream Dashboard",
     page_icon="🚨",
@@ -228,8 +237,6 @@ h3 { color: #c8d4e0 !important; font-size: 0.9rem !important; font-weight: 500 !
 </style>
 """, unsafe_allow_html=True)
 
-# ── Auto-refresh ─────────────────────────────────────────────────────────────
-st_autorefresh(interval=5000, key="data_refresh_trigger")
 
 # ── Data fetching ─────────────────────────────────────────────────────────────
 def fetch_tweets():
@@ -257,10 +264,18 @@ def trigger_injection(category, landmark, duration=30):
     try:
         r = requests.post(f"{BACKEND_URL}/api/inject",
                           json={"category": category, "landmark": landmark, "duration": duration},
-                          timeout=2.0)
-        return r.status_code == 200
+                          timeout=5.0)
+        if r.status_code == 200:
+            st.session_state.last_inject_time = time.time()
+            st.session_state.last_inject_msg = f"✓ {category} injected at {landmark}"
+            st.session_state.last_inject_success = True
+            return True
+        else:
+            st.session_state.last_inject_msg = f"Failed — status {r.status_code}"
+            st.session_state.last_inject_success = False
     except Exception as e:
-        st.sidebar.error(f"Injection failed: {e}")
+        st.session_state.last_inject_msg = f"Injection failed: {e}"
+        st.session_state.last_inject_success = False
     return False
 
 # ── Load state ────────────────────────────────────────────────────────────────
@@ -654,6 +669,12 @@ st.sidebar.markdown("""
 font-family:JetBrains Mono,monospace;margin-bottom:8px;margin-top:4px;'>Crisis Injector</div>
 """, unsafe_allow_html=True)
 
+# Initialize inject message state
+if "last_inject_msg" not in st.session_state:
+    st.session_state.last_inject_msg = ""
+if "last_inject_success" not in st.session_state:
+    st.session_state.last_inject_success = None
+
 inject_cat = st.sidebar.selectbox("Category", ["Fire", "Flood", "Civic Unrest", "Outbreak"], label_visibility="collapsed")
 inject_landmark = st.sidebar.selectbox("Landmark", [
     "Big Ben", "Hyde Park", "London Eye", "Tower Bridge",
@@ -665,10 +686,7 @@ inject_landmark = st.sidebar.selectbox("Landmark", [
 inject_duration = st.sidebar.slider("Duration (seconds)", 15, 60, 30)
 
 if st.sidebar.button("🚨 Inject Crisis Event", use_container_width=True, type="primary"):
-    if trigger_injection(inject_cat, inject_landmark, inject_duration):
-        st.sidebar.success(f"✓ {inject_cat} injected at {inject_landmark}")
-    else:
-        st.sidebar.error("Injection failed.")
+    trigger_injection(inject_cat, inject_landmark, inject_duration)
 
 st.sidebar.markdown("""
 <div style='font-size:0.65rem;color:#4a6a7a;text-transform:uppercase;letter-spacing:0.1em;
@@ -676,25 +694,22 @@ font-family:JetBrains Mono,monospace;margin-bottom:8px;margin-top:12px;'>Quick P
 """, unsafe_allow_html=True)
 
 if st.sidebar.button("🔥 Fire — London Eye", use_container_width=True):
-    if trigger_injection("Fire", "London Eye", 30):
-        st.sidebar.success("✓ Fire at London Eye")
-    else:
-        st.sidebar.error("Failed — check backend connection")
+    trigger_injection("Fire", "London Eye", 30)
 
 if st.sidebar.button("🌊 Flood — Big Ben", use_container_width=True):
-    if trigger_injection("Flood", "Big Ben", 40):
-        st.sidebar.success("✓ Flood near Big Ben")
-    else:
-        st.sidebar.error("Failed — check backend connection")    
+    trigger_injection("Flood", "Big Ben", 40)
 
 if st.sidebar.button("📣 Unrest — Trafalgar Sq", use_container_width=True):
-    if trigger_injection("Civic Unrest", "Trafalgar Square", 30):
-        st.sidebar.success("✓ Unrest at Trafalgar Square")
-    else:
-        st.sidebar.error("Failed — check backend connection")
+    trigger_injection("Civic Unrest", "Trafalgar Square", 30)
 
 if st.sidebar.button("🦠 Outbreak — India Gate", use_container_width=True):
-    if trigger_injection("Outbreak", "India Gate", 30):
-        st.sidebar.success("✓ Outbreak at India Gate")
-    else:
-        st.sidebar.error("Failed — check backend connection")
+    trigger_injection("Outbreak", "India Gate", 30)
+
+# Show persistent inject message that survives auto-refresh
+if st.session_state.last_inject_msg:
+    time_since = time.time() - st.session_state.get("last_inject_time", 0)
+    if time_since < 10:  # Show for 10 seconds
+        if st.session_state.last_inject_success:
+            st.sidebar.success(st.session_state.last_inject_msg)
+        else:
+            st.sidebar.error(st.session_state.last_inject_msg)
