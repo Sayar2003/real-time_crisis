@@ -4,81 +4,92 @@ import io
 import time
 import uuid
 import logging
-import asyncio
+import zipfile
 import requests
 import pandas as pd
-from datetime import datetime, timezone
-from backend.app.config import CRISIS_CATEGORIES
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-# GDELT event codes that map to our crisis categories
-# Full codebook: http://data.gdeltproject.org/documentation/CAMEO.Manual.CAMEO.pdf
-GDELT_EVENT_CODE_MAP = {
+# Expanded crisis keyword map covering more event types
+CRISIS_KEYWORDS = {
     "Fire": [
-        "0251",  # Appeal for humanitarian aid
-        "2041",  # Use conventional military force
-        "180",   # Use unconventional mass violence
-        "1831",  # Threaten unconventional attack
+        "fire", "wildfire", "bushfire", "explosion", "blast",
+        "blaze", "burning", "inferno", "arson", "firestorm"
     ],
     "Flood": [
-        "0251",  # Natural disaster appeal
-        "0242",  # Appeal for economic aid
+        "flood", "flooding", "flash flood", "storm surge", "inundation",
+        "deluge", "waterlogged", "submerged", "overflow", "cyclone",
+        "hurricane", "typhoon", "monsoon"
+    ],
+    "Earthquake": [
+        "earthquake", "quake", "tremor", "seismic", "aftershock",
+        "magnitude", "richter", "epicenter", "fault line"
+    ],
+    "Tsunami": [
+        "tsunami", "tidal wave", "ocean wave", "seismic wave", "wave warning"
+    ],
+    "Tornado": [
+        "tornado", "twister", "funnel cloud", "windstorm", "supercell",
+        "cyclone warning", "wind damage"
+    ],
+    "Volcanic": [
+        "volcano", "volcanic", "eruption", "lava", "ash cloud",
+        "magma", "pyroclastic", "volcanic ash"
+    ],
+    "Landslide": [
+        "landslide", "mudslide", "rockslide", "avalanche", "debris flow",
+        "mudflow", "slope failure"
+    ],
+    "Drought": [
+        "drought", "water shortage", "water crisis", "famine",
+        "crop failure", "food shortage", "dry spell"
     ],
     "Civic Unrest": [
-        "145",   # Protest violently
-        "1451",  # Engage in strike or boycott
-        "1452",  # Conduct hunger strike
-        "1453",  # Conduct sit-in
-        "1454",  # Conduct march or rally
-        "146",   # Revolt
-        "1461",  # Mutiny
-        "1462",  # Engage in armed battle
-        "173",   # Impose curfew
-        "174",   # Impose state of emergency
-        "175",   # Impose martial law
+        "protest", "riot", "unrest", "demonstration", "clash",
+        "coup", "uprising", "revolution", "violence", "crackdown",
+        "martial law", "curfew", "conflict"
     ],
     "Outbreak": [
-        "0251",  # Appeal for humanitarian aid
-        "0243",  # Appeal for medical aid
-        "0244",  # Appeal for military aid
+        "outbreak", "epidemic", "pandemic", "virus", "disease",
+        "infection", "quarantine", "health emergency", "contamination",
+        "pathogen", "cholera", "dengue", "ebola", "malaria"
+    ],
+    "Conflict": [
+        "war", "attack", "bombing", "airstrike", "missile",
+        "military", "troops", "casualties", "ceasefire", "invasion",
+        "shelling", "gunfire", "armed"
+    ],
+    "Infrastructure": [
+        "blackout", "power outage", "grid failure", "bridge collapse",
+        "building collapse", "pipeline", "dam failure", "infrastructure"
     ],
 }
 
-# GDELT QuadClass codes for filtering
-# 1=Verbal Cooperation, 2=Material Cooperation, 3=Verbal Conflict, 4=Material Conflict
-CRISIS_QUAD_CLASSES = [3, 4]  # Focus on conflict events
+# GDELT QuadClass — focus on conflict and crisis events
+CRISIS_QUAD_CLASSES = [3, 4]
 
-# Keywords in source URLs/names that indicate crisis news
-CRISIS_KEYWORDS = {
-    "Fire":         ["fire", "explosion", "blast", "blaze", "burn"],
-    "Flood":        ["flood", "storm", "hurricane", "cyclone", "typhoon", "tsunami"],
-    "Civic Unrest": ["protest", "riot", "unrest", "demonstration", "clash", "coup"],
-    "Outbreak":     ["outbreak", "epidemic", "virus", "disease", "infection", "quarantine"],
+# GDELT event codes mapping to categories
+GDELT_EVENT_CODES = {
+    "Civic Unrest": ["14", "145", "146", "173", "174", "175"],
+    "Conflict":     ["19", "190", "193", "194", "195", "196"],
+    "Outbreak":     ["0243", "0244"],
 }
 
 
 class GDELTIngestor:
-    """
-    Polls GDELT 2.0 Event Database every 15 minutes for real crisis events.
-    Converts GDELT rows into tweet-format dicts compatible with our pipeline.
-    """
-
     GDELT_LASTUPDATE_URL = "http://data.gdeltproject.org/gdeltv2/lastupdate.txt"
-    POLL_INTERVAL = 900  # 15 minutes in seconds
+    POLL_INTERVAL = 900  # 15 minutes
 
     def __init__(self):
         self.last_fetched_url = None
-        self.events_ingested = 0
+        self.events_ingested  = 0
 
     def _get_latest_csv_url(self) -> str | None:
-        """Fetches the URL of the latest GDELT event CSV file."""
         try:
             response = requests.get(self.GDELT_LASTUPDATE_URL, timeout=10)
             response.raise_for_status()
-            # File lists 3 URLs — we want the first one (events file)
-            lines = response.text.strip().split("\n")
-            for line in lines:
+            for line in response.text.strip().split("\n"):
                 parts = line.strip().split(" ")
                 if len(parts) == 3 and "export" in parts[2]:
                     return parts[2].strip()
@@ -87,14 +98,11 @@ class GDELTIngestor:
         return None
 
     def _fetch_events(self, csv_url: str) -> pd.DataFrame:
-        """Downloads and parses the GDELT CSV file."""
         try:
             logger.info(f"Fetching GDELT data from: {csv_url}")
             response = requests.get(csv_url, timeout=30)
             response.raise_for_status()
 
-            # GDELT CSV has no header — we define column names
-            # Full schema: http://data.gdeltproject.org/documentation/GDELT-Event_Codebook-V2.0.pdf
             cols = [
                 "GLOBALEVENTID", "SQLDATE", "MonthYear", "Year", "FractionDate",
                 "Actor1Code", "Actor1Name", "Actor1CountryCode", "Actor1KnownGroupCode",
@@ -116,14 +124,13 @@ class GDELTIngestor:
                 "ActionGeo_FeatureID", "DATEADDED", "SOURCEURL"
             ]
 
-            import zipfile
-            from io import BytesIO
-            zip_bytes = BytesIO(response.content)
+            zip_bytes = io.BytesIO(response.content)
             with zipfile.ZipFile(zip_bytes) as z:
-                csv_filename = z.namelist()[0]
-                with z.open(csv_filename) as f:
-                    df = pd.read_csv(f, sep="\t", header=None, names=cols,
-                                     dtype=str, on_bad_lines="skip")
+                with z.open(z.namelist()[0]) as f:
+                    df = pd.read_csv(
+                        f, sep="\t", header=None, names=cols,
+                        dtype=str, on_bad_lines="skip"
+                    )
             return df
 
         except Exception as e:
@@ -131,90 +138,107 @@ class GDELTIngestor:
             return pd.DataFrame()
 
     def _classify_event(self, row: pd.Series) -> str | None:
-        """
-        Maps a GDELT event row to one of our crisis categories.
-        Returns None if the event is not crisis-relevant.
-        """
-        source_url = str(row.get("SOURCEURL", "")).lower()
-        event_code = str(row.get("EventCode", ""))
+        source_url  = str(row.get("SOURCEURL", "")).lower()
+        event_code  = str(row.get("EventCode", ""))
+        actor1      = str(row.get("Actor1Name", "")).lower()
+        actor2      = str(row.get("Actor2Name", "")).lower()
+        location    = str(row.get("ActionGeo_FullName", "")).lower()
+        combined    = f"{source_url} {actor1} {actor2} {location}"
 
         try:
             quad_class = int(row.get("QuadClass", 0))
         except (ValueError, TypeError):
             quad_class = 0
 
-        # Only process conflict events
-        if quad_class not in CRISIS_QUAD_CLASSES:
-            return None
-
-        # Check keywords in source URL for category
+        # Check keywords in combined text
         for category, keywords in CRISIS_KEYWORDS.items():
             for kw in keywords:
-                if kw in source_url:
+                if kw in combined:
                     return category
 
-        # Check event codes
-        for category, codes in GDELT_EVENT_CODE_MAP.items():
-            if event_code in codes:
-                return category
+        # Check GDELT event codes
+        for category, codes in GDELT_EVENT_CODES.items():
+            for code in codes:
+                if event_code.startswith(code):
+                    return category
+
+        # Only include conflict quad class events even without keyword match
+        if quad_class in CRISIS_QUAD_CLASSES:
+            return "Conflict"
 
         return None
 
-    def _row_to_tweet(self, row: pd.Series, category: str) -> dict | None:
-        """Converts a GDELT event row to our internal tweet format."""
+    def _generate_text(self, category: str, location: str,
+                       url: str, tone: float, mentions: int) -> str:
+        severity = "severe" if tone < -5 else "significant" if tone < -2 else "emerging"
+        source   = url.split("/")[2] if "/" in url else "news source"
+        source   = source.replace("www.", "")
+
+        templates = {
+            "Fire":           f"{severity.title()} fire or explosion reported in {location}. Multiple sources confirming the incident.",
+            "Flood":          f"{severity.title()} flooding or storm event reported in {location}. Emergency services responding.",
+            "Earthquake":     f"Earthquake detected near {location}. Reports of ground shaking and potential structural damage.",
+            "Tsunami":        f"Tsunami warning issued for {location}. Coastal evacuation orders being considered.",
+            "Tornado":        f"Tornado or severe windstorm reported in {location}. Residents urged to seek shelter immediately.",
+            "Volcanic":       f"Volcanic activity reported near {location}. Ash cloud and lava flow monitoring underway.",
+            "Landslide":      f"Landslide or mudslide reported in {location}. Roads blocked, rescue operations initiated.",
+            "Drought":        f"Severe drought conditions reported in {location}. Water shortage affecting local population.",
+            "Civic Unrest":   f"Civil unrest and protests reported in {location}. Security forces deployed to maintain order.",
+            "Outbreak":       f"Disease outbreak reported in {location}. Health authorities investigating {mentions} confirmed cases.",
+            "Conflict":       f"Armed conflict or military action reported in {location}. {mentions} news sources reporting casualties.",
+            "Infrastructure": f"Critical infrastructure failure reported in {location}. Emergency crews responding to the incident.",
+        }
+        return templates.get(category, f"Crisis event detected in {location}. Monitoring situation closely.")
+
+    def _row_to_event(self, row: pd.Series, category: str) -> dict | None:
         try:
-            lat = float(row.get("ActionGeo_Lat", "") or 0)
-            lon = float(row.get("ActionGeo_Long", "") or 0)
+            lat = float(row.get("ActionGeo_Lat") or 0)
+            lon = float(row.get("ActionGeo_Long") or 0)
 
             if lat == 0.0 and lon == 0.0:
-                return None  # Skip events with no location
+                return None
 
-            location = str(row.get("ActionGeo_FullName", "Unknown Location"))
-            source_url = str(row.get("SOURCEURL", ""))
+            # Filter out invalid coordinates
+            if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
+                return None
+
+            location    = str(row.get("ActionGeo_FullName", "Unknown Location"))
+            source_url  = str(row.get("SOURCEURL", ""))
             num_mentions = int(row.get("NumMentions", 1) or 1)
-            avg_tone = float(row.get("AvgTone", 0) or 0)
+            avg_tone    = float(row.get("AvgTone", 0) or 0)
+            num_articles = int(row.get("NumArticles", 1) or 1)
 
-            # Generate descriptive text from available fields
-            text = self._generate_text(category, location, source_url, avg_tone)
+            # Credibility score based on number of sources
+            credibility = min(num_mentions / 20.0, 1.0)
+
+            text = self._generate_text(category, location, source_url, avg_tone, num_mentions)
 
             return {
                 "id":            f"gdelt_{row.get('GLOBALEVENTID', uuid.uuid4())}",
                 "text":          text,
                 "timestamp":     time.time(),
                 "true_category": category,
+                "category":      category,
                 "geotagged":     True,
                 "lat":           lat,
                 "lon":           lon,
+                "landmark":      location,
                 "source":        "gdelt",
                 "source_url":    source_url,
                 "num_mentions":  num_mentions,
-                "credibility":   min(num_mentions / 10.0, 1.0),  # simple credibility score
+                "num_articles":  num_articles,
+                "avg_tone":      round(avg_tone, 2),
+                "credibility":   round(credibility, 2),
             }
         except Exception as e:
             logger.debug(f"Failed to convert GDELT row: {e}")
             return None
 
-    def _generate_text(self, category: str, location: str, url: str, tone: float) -> str:
-        """Generates a human-readable description from GDELT event data."""
-        severity = "severe" if tone < -5 else "moderate"
-        templates = {
-            "Fire":         f"Reports of {severity} fire or explosion incident in {location}.",
-            "Flood":        f"Flooding or severe storm event reported in {location}.",
-            "Civic Unrest": f"Civil unrest and protests reported in {location}.",
-            "Outbreak":     f"Disease outbreak or health emergency reported in {location}.",
-        }
-        return templates.get(category, f"Crisis event detected in {location}.")
-
     def fetch_latest(self) -> list[dict]:
-        """
-        Fetches the latest GDELT update and returns crisis events
-        as tweet-format dicts ready for the pipeline.
-        """
         csv_url = self._get_latest_csv_url()
         if not csv_url:
             return []
 
-        # Skip if we already processed this file
         if csv_url == self.last_fetched_url:
             logger.info("GDELT: No new update available yet.")
             return []
@@ -225,23 +249,21 @@ class GDELTIngestor:
         if df.empty:
             return []
 
-        crisis_tweets = []
+        crisis_events = []
         for _, row in df.iterrows():
             category = self._classify_event(row)
             if category is None:
                 continue
-            tweet = self._row_to_tweet(row, category)
-            if tweet:
-                crisis_tweets.append(tweet)
+            event = self._row_to_event(row, category)
+            if event:
+                crisis_events.append(event)
 
-        self.events_ingested += len(crisis_tweets)
-        logger.info(f"GDELT: Ingested {len(crisis_tweets)} crisis events from latest update.")
-        return crisis_tweets
+        self.events_ingested += len(crisis_events)
+        logger.info(f"GDELT: Ingested {len(crisis_events)} crisis events from latest update.")
+        return crisis_events
 
 
-# Global instance
 gdelt_ingestor = GDELTIngestor()
-
 
 def get_gdelt_ingestor() -> GDELTIngestor:
     return gdelt_ingestor

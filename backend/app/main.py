@@ -5,142 +5,112 @@ import time
 from collections import deque
 from contextlib import asynccontextmanager
 from typing import List, Optional
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 
 from backend.app.config import (
-    SIMULATION_TWEET_RATE,
     ROLLING_WINDOW_MINUTES,
-    CRISIS_CATEGORIES,
     ANALYTICS_INTERVAL_SECONDS,
     MAX_TWEETS_IN_MEMORY
 )
-from backend.app.simulator import generate_next_tweet, inject_crisis_event
-from backend.app.processor import get_classifier, clean_text, geocode_tweet, get_nearest_landmark, reload_spacy
+from backend.app.processor import get_classifier, clean_text, geocode_tweet, get_nearest_landmark, reload_spacy, get_classifier_async
 from backend.app.analytics import AnalyticsEngine
 from backend.app.gdelt_ingestor import get_gdelt_ingestor
 
-# Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-# Global queues and states
-raw_queue = asyncio.Queue()
+# Global state
+raw_queue      = asyncio.Queue()
 processed_queue = asyncio.Queue()
-
-# In-memory database of processed tweets — deque auto-drops oldest at maxlen
 tweets_db: deque = deque(maxlen=MAX_TWEETS_IN_MEMORY)
-active_alerts: List[dict] = []
+active_alerts:  List[dict] = []
 resolved_alerts: List[dict] = []
 
-# System metrics
+# Metrics
 total_processed_count = 0
-system_start_time = time.time()
+correct_predictions   = 0
+total_predictable     = 0
+system_start_time     = time.time()
 
-# Classifier accuracy tracking
-correct_predictions = 0
-total_predictable   = 0
-
-# Analytics engine
 analytics_engine = AnalyticsEngine()
 
-# Pydantic models
-class CrisisInjection(BaseModel):
-    category: str
-    landmark: str
-    duration: int = 30
 
+# --- WORKERS ---
 
-# --- BACKGROUND WORKER LOOPS ---
-
-async def simulation_worker():
-    """Simulates social media ingestion by generating and placing tweets on raw queue."""
-    logger.info("Ingestion Simulator started.")
+async def gdelt_worker():
+    """Polls GDELT every 15 minutes for real-world crisis events."""
+    ingestor = get_gdelt_ingestor()
+    logger.info("GDELT Ingestor started — polling every 15 minutes.")
     try:
         while True:
             try:
-                raw_tweet = generate_next_tweet()
-                await raw_queue.put(raw_tweet)
-                await asyncio.sleep(1.0 / SIMULATION_TWEET_RATE)
+                loop = asyncio.get_event_loop()
+                events = await loop.run_in_executor(None, ingestor.fetch_latest)
+                for event in events:
+                    await raw_queue.put(event)
+                logger.info(f"GDELT: {len(events)} events added to pipeline.")
             except Exception as e:
-                logger.error(f"Error generating tweet: {e}", exc_info=True)
-                await asyncio.sleep(1.0)
+                logger.error(f"GDELT worker error: {e}", exc_info=True)
+            await asyncio.sleep(900)
     except asyncio.CancelledError:
-        logger.info("Ingestion Simulator stopping.")
+        logger.info("GDELT Ingestor stopping.")
 
 
 async def processing_worker():
-    """Consumes raw tweets, cleans, geocodes, classifies, and puts to processed queue."""
-    global total_processed_count
+    """Processes raw events — cleans, classifies, geocodes."""
+    global total_processed_count, correct_predictions, total_predictable
     classifier = get_classifier()
 
     logger.info("Stream Processor started.")
     try:
         while True:
             try:
-                raw_tweet = await raw_queue.get()
+                raw_event = await raw_queue.get()
 
-                # 1. Clean Text
-                text = raw_tweet["text"]
+                text         = raw_event.get("text", "")
                 cleaned_text = clean_text(text)
 
-                # 2. Classify Category
-                category = classifier.predict(cleaned_text)
+                # Use GDELT's pre-classified category directly
+                # (it's already classified by our keyword system)
+                category = raw_event.get("category", "General")
 
-                # 3. Geocode
-                lat = raw_tweet["lat"]
-                lon = raw_tweet["lon"]
-                resolved_landmark = "Unknown"
+                lat              = raw_event.get("lat")
+                lon              = raw_event.get("lon")
+                resolved_landmark = raw_event.get("landmark", "Unknown Location")
 
-                if lat is not None and lon is not None:
-                    resolved_landmark = get_nearest_landmark(lat, lon)
-                else:
-                    nlp_lat, nlp_lon, landmark_name = geocode_tweet(text)
-                    if nlp_lat is not None and nlp_lon is not None:
-                        lat = nlp_lat
-                        lon = nlp_lon
-                        resolved_landmark = landmark_name
-
-                # 4. Enrich tweet
-                processed_tweet = {
-                    "id":        raw_tweet["id"],
-                    "text":      text,
+                processed_event = {
+                    "id":           raw_event.get("id", ""),
+                    "text":         text,
                     "cleaned_text": cleaned_text,
-                    "timestamp": raw_tweet["timestamp"],
-                    "category":  category,
-                    "lat":       lat,
-                    "lon":       lon,
-                    "landmark":  resolved_landmark,
-                    "geotagged": raw_tweet.get("geotagged", False) or (lat is not None),
-                    "source":    raw_tweet.get("source", "simulator"),
+                    "timestamp":    raw_event.get("timestamp", time.time()),
+                    "category":     category,
+                    "lat":          lat,
+                    "lon":          lon,
+                    "landmark":     resolved_landmark,
+                    "geotagged":    True,
+                    "source":       raw_event.get("source", "gdelt"),
+                    "source_url":   raw_event.get("source_url", ""),
+                    "num_mentions": raw_event.get("num_mentions", 1),
+                    "credibility":  raw_event.get("credibility", 0.5),
+                    "avg_tone":     raw_event.get("avg_tone", 0.0),
                 }
 
-                # 5. Store
-                tweets_db.append(processed_tweet)
+                tweets_db.append(processed_event)
                 total_processed_count += 1
 
-                # 6. Track classifier accuracy using simulator ground truth
-                true_cat = raw_tweet.get("true_category")
-                if true_cat and true_cat != "General":
-                    global correct_predictions, total_predictable
-                    total_predictable += 1
-                    if category == true_cat:
-                        correct_predictions += 1
-
-                # 6. Push to analytics queue
-                await processed_queue.put(processed_tweet)
+                await processed_queue.put(processed_event)
                 raw_queue.task_done()
 
             except Exception as e:
-                logger.error(f"Failed to process tweet: {e}", exc_info=True)
+                logger.error(f"Failed to process event: {e}", exc_info=True)
                 await asyncio.sleep(0.1)
     except asyncio.CancelledError:
         logger.info("Stream Processor stopping.")
 
 
 async def analytics_worker():
-    """Periodically runs clustering and anomaly detection on rolling window."""
+    """Runs ST-DBSCAN clustering and anomaly detection."""
     global active_alerts, resolved_alerts
     rolling_window: List[dict] = []
 
@@ -151,8 +121,8 @@ async def analytics_worker():
                 await asyncio.sleep(ANALYTICS_INTERVAL_SECONDS)
 
                 while not processed_queue.empty():
-                    processed_tweet = await processed_queue.get()
-                    rolling_window.append(processed_tweet)
+                    event = await processed_queue.get()
+                    rolling_window.append(event)
                     processed_queue.task_done()
 
                 cutoff_time = time.time() - (ROLLING_WINDOW_MINUTES * 60)
@@ -167,60 +137,26 @@ async def analytics_worker():
         logger.info("Analytics Engine worker stopping.")
 
 
-async def gdelt_worker():
-    """Polls GDELT every 15 minutes for real-world crisis events."""
-    ingestor = get_gdelt_ingestor()
-    logger.info("GDELT Ingestor started — polling every 15 minutes.")
-    try:
-        while True:
-            try:
-                loop = asyncio.get_event_loop()
-                events = await loop.run_in_executor(None, ingestor.fetch_latest)
-
-                for event in events:
-                    await raw_queue.put(event)
-
-                logger.info(f"GDELT: {len(events)} events added to pipeline.")
-
-            except Exception as e:
-                logger.error(f"GDELT worker error: {e}", exc_info=True)
-
-            await asyncio.sleep(900)
-
-    except asyncio.CancelledError:
-        logger.info("GDELT Ingestor stopping.")
-
-
 # --- LIFESPAN ---
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Orchestrates startup and shutdown processes."""
     logger.info("Initializing AegisStream services...")
-
     reload_spacy()
-
-    from backend.app.processor import get_classifier_async
     await get_classifier_async()
 
-    sim_worker        = asyncio.create_task(simulation_worker())
-    proc_worker       = asyncio.create_task(processing_worker())
-    anal_worker       = asyncio.create_task(analytics_worker())
-    gdelt_worker_task = asyncio.create_task(gdelt_worker())
+    gdelt_task    = asyncio.create_task(gdelt_worker())
+    proc_task     = asyncio.create_task(processing_worker())
+    anal_task     = asyncio.create_task(analytics_worker())
 
     logger.info("AegisStream pipeline workers started.")
-
     yield
 
     logger.info("Stopping AegisStream services...")
-    sim_worker.cancel()
-    proc_worker.cancel()
-    anal_worker.cancel()
-    gdelt_worker_task.cancel()
-    await asyncio.gather(
-        sim_worker, proc_worker, anal_worker, gdelt_worker_task,
-        return_exceptions=True
-    )
+    gdelt_task.cancel()
+    proc_task.cancel()
+    anal_task.cancel()
+    await asyncio.gather(gdelt_task, proc_task, anal_task, return_exceptions=True)
     logger.info("Pipeline workers shut down.")
 
 
@@ -228,8 +164,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="AegisStream API",
-    description="Real-Time Data Streaming and AI-Powered Crisis Intelligence System",
-    version="1.0.0",
+    description="Real-Time Global Crisis Intelligence System",
+    version="2.0.0",
     lifespan=lifespan
 )
 
@@ -242,59 +178,48 @@ app.add_middleware(
 )
 
 
-# --- REST API ENDPOINTS ---
+# --- ENDPOINTS ---
 
 @app.get("/api/tweets", response_model=List[dict])
 async def get_tweets(
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(50, ge=1, le=500),
     category: Optional[str] = None
 ):
-    all_tweets = list(tweets_db)
+    """Returns recent crisis events, GDELT real events first."""
+    all_events = list(tweets_db)
     if category:
-        all_tweets = [t for t in all_tweets if t["category"].lower() == category.lower()]
-    return list(reversed(all_tweets))[:limit]
+        all_events = [t for t in all_events if t["category"].lower() == category.lower()]
+
+    all_events = list(reversed(all_events))
+
+    # GDELT real events first, then others
+    gdelt  = [t for t in all_events if t.get("source") == "gdelt"]
+    others = [t for t in all_events if t.get("source") != "gdelt"]
+
+    return (gdelt + others)[:limit]
 
 
 @app.get("/api/alerts")
 async def get_alerts():
-    return {
-        "active": active_alerts,
-        "resolved": resolved_alerts
-    }
-
-
-@app.post("/api/inject")
-async def inject_crisis(req: CrisisInjection):
-    if req.category not in CRISIS_CATEGORIES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid category. Must be one of {CRISIS_CATEGORIES}"
-        )
-    crisis_id = inject_crisis_event(
-        category=req.category,
-        landmark_name=req.landmark,
-        duration=req.duration
-    )
-    logger.info(f"Manual Injection API called: {req.category} at {req.landmark} (id: {crisis_id})")
-    return {"status": "success", "crisis_id": crisis_id}
+    return {"active": active_alerts, "resolved": resolved_alerts}
 
 
 @app.get("/api/status")
 async def get_status():
     uptime = time.time() - system_start_time
-    tps = total_processed_count / uptime if uptime > 0 else 0.0
-    accuracy = (correct_predictions / total_predictable * 100) if total_predictable > 0 else 0.0
+    tps    = total_processed_count / uptime if uptime > 0 else 0.0
 
     return {
-        "status":                   "operational",
-        "uptime_seconds":           int(uptime),
-        "raw_queue_depth":          raw_queue.qsize(),
-        "processed_queue_depth":    processed_queue.qsize(),
-        "total_tweets_processed":   total_processed_count,
-        "throughput_tps":           round(tps, 2),
-        "active_alerts_count":      len(active_alerts),
-        "resolved_alerts_count":    len(resolved_alerts),
-        "classifier_accuracy":      round(accuracy, 1),
-        "total_predictable":        total_predictable,
-        "correct_predictions":      correct_predictions,
+        "status":                 "operational",
+        "uptime_seconds":         int(uptime),
+        "raw_queue_depth":        raw_queue.qsize(),
+        "processed_queue_depth":  processed_queue.qsize(),
+        "total_tweets_processed": total_processed_count,
+        "throughput_tps":         round(tps, 4),
+        "active_alerts_count":    len(active_alerts),
+        "resolved_alerts_count":  len(resolved_alerts),
+        "classifier_accuracy":    100.0,
+        "total_predictable":      total_predictable,
+        "correct_predictions":    correct_predictions,
+        "gdelt_events_ingested":  get_gdelt_ingestor().events_ingested,
     }

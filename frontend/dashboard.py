@@ -14,14 +14,7 @@ import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
 import pydeck as pdk
 
-# Disable auto-refresh temporarily when inject button was just clicked
-if "last_inject_time" not in st.session_state:
-    st.session_state.last_inject_time = 0
 
-# Only auto-refresh if no injection happened in last 3 seconds
-time_since_inject = time.time() - st.session_state.last_inject_time
-if time_since_inject > 3:
-    st_autorefresh(interval=5000, key="data_refresh_trigger")
 
 st.set_page_config(
     page_title="AegisStream Dashboard",
@@ -39,11 +32,19 @@ def hex_to_rgba(hex_color, alpha=0.08):
     return f'rgba({r},{g},{b},{alpha})'
 
 CAT_COLORS = {
-    "General":      "#2ed573",
-    "Fire":         "#ff4757",
-    "Flood":        "#1e90ff",
-    "Civic Unrest": "#ffa502",
-    "Outbreak":     "#a855f7"
+    "General":        "#6b7280",
+    "Fire":           "#ff4757",
+    "Flood":          "#1e90ff",
+    "Earthquake":     "#f97316",
+    "Tsunami":        "#06b6d4",
+    "Tornado":        "#8b5cf6",
+    "Volcanic":       "#ef4444",
+    "Landslide":      "#92400e",
+    "Drought":        "#d97706",
+    "Civic Unrest":   "#ffa502",
+    "Outbreak":       "#a855f7",
+    "Conflict":       "#dc2626",
+    "Infrastructure": "#64748b",
 }
 
 # ── CSS ─────────────────────────────────────────────────────────────────────
@@ -170,6 +171,14 @@ st.markdown("""
 }
 .badge-general  { background: #2d3748; color: #a0aec0; }
 .badge-fire     { background: #2d1515; color: #fc8181; border: 1px solid #fc818150; }
+.badge-earthquake    { background: #2d1a0e; color: #fb923c; border: 1px solid #fb923c50; }
+.badge-tsunami       { background: #0a2030; color: #22d3ee; border: 1px solid #22d3ee50; }
+.badge-tornado       { background: #1e1030; color: #a78bfa; border: 1px solid #a78bfa50; }
+.badge-volcanic      { background: #2d0a0a; color: #f87171; border: 1px solid #f87171050; }
+.badge-landslide     { background: #1a1008; color: #d97706; border: 1px solid #d9770650; }
+.badge-drought       { background: #2d1f00; color: #fbbf24; border: 1px solid #fbbf2450; }
+.badge-conflict      { background: #2d0505; color: #f87171; border: 1px solid #f8717150; }
+.badge-infrastructure{ background: #0f1620; color: #94a3b8; border: 1px solid #94a3b850; }
 .badge-flood    { background: #152040; color: #63b3ed; border: 1px solid #63b3ed50; }
 .badge-unrest   { background: #2d2515; color: #f6e05e; border: 1px solid #f6e05e50; }
 .badge-outbreak { background: #251535; color: #b794f4; border: 1px solid #b794f450; }
@@ -260,23 +269,6 @@ def fetch_status():
     except Exception: pass
     return None
 
-def trigger_injection(category, landmark, duration=30):
-    try:
-        r = requests.post(f"{BACKEND_URL}/api/inject",
-                          json={"category": category, "landmark": landmark, "duration": duration},
-                          timeout=5.0)
-        if r.status_code == 200:
-            st.session_state.last_inject_time = time.time()
-            st.session_state.last_inject_msg = f"✓ {category} injected at {landmark}"
-            st.session_state.last_inject_success = True
-            return True
-        else:
-            st.session_state.last_inject_msg = f"Failed — status {r.status_code}"
-            st.session_state.last_inject_success = False
-    except Exception as e:
-        st.session_state.last_inject_msg = f"Injection failed: {e}"
-        st.session_state.last_inject_success = False
-    return False
 
 # ── Load state ────────────────────────────────────────────────────────────────
 status_data = fetch_status()
@@ -341,8 +333,18 @@ with col_left:
         if isinstance(t, dict) and t.get("lat") is not None and t.get("lon") is not None:
             cat = t.get("category", "General")
             color_map = {
-                "Fire": [231,76,60,180], "Flood": [52,152,219,180],
-                "Civic Unrest": [241,196,15,180], "Outbreak": [155,89,182,180]
+                "Fire":           [231, 76,  60,  200],
+                "Flood":          [52,  152, 219, 200],
+                "Earthquake":     [249, 115, 22,  200],
+                "Tsunami":        [6,   182, 212, 200],
+                "Tornado":        [139, 92,  246, 200],
+                "Volcanic":       [239, 68,  68,  200],
+                "Landslide":      [146, 64,  14,  200],
+                "Drought":        [217, 119, 6,   200],
+                "Civic Unrest":   [241, 196, 15,  200],
+                "Outbreak":       [168, 85,  247, 200],
+                "Conflict":       [220, 38,  38,  200],
+                "Infrastructure": [100, 116, 139, 200],
             }
             tweets_list.append({
                 "lat": t["lat"], "lon": t["lon"], "category": cat,
@@ -580,7 +582,20 @@ with col_right:
         for t in tweets_data[:30]:
             if isinstance(t, dict):
                 cat          = t.get("category", "General")
-                badge_class  = {"Fire":"badge-fire","Flood":"badge-flood","Civic Unrest":"badge-unrest","Outbreak":"badge-outbreak"}.get(cat, "badge-general")
+                badge_class = {
+                    "Fire":           "badge-fire",
+                    "Flood":          "badge-flood",
+                    "Civic Unrest":   "badge-unrest",
+                    "Outbreak":       "badge-outbreak",
+                    "Earthquake":     "badge-earthquake",
+                    "Tsunami":        "badge-tsunami",
+                    "Tornado":        "badge-tornado",
+                    "Volcanic":       "badge-volcanic",
+                    "Landslide":      "badge-landslide",
+                    "Drought":        "badge-drought",
+                    "Conflict":       "badge-conflict",
+                    "Infrastructure": "badge-infrastructure",
+                }.get(cat, "badge-general")
                 cat_class    = card_cat_classes.get(cat, "")
                 landmark     = t.get("landmark", "Unknown")
                 t_time       = time.strftime("%H:%M:%S", time.localtime(t.get("timestamp", time.time())))
@@ -603,15 +618,19 @@ with col_right:
     feed_html += "</div>"
     st.markdown(feed_html, unsafe_allow_html=True)
 
-# ── Sidebar ───────────────────────────────────────────────────────────────────
+# --- SIDEBAR ---
+st.sidebar.markdown("""
+<div style='padding:4px 0 16px 0;'>
+    <div style='font-size:1.1rem;font-weight:600;color:#66fcf1;font-family:Inter,sans-serif;letter-spacing:-0.3px;'>🛡️ AegisStream</div>
+    <div style='font-size:0.65rem;color:#4a6a7a;text-transform:uppercase;letter-spacing:0.1em;margin-top:2px;'>Global Crisis Intelligence</div>
+</div>
+""", unsafe_allow_html=True)
 
 if status_data:
-    uptime = status_data.get('uptime_seconds', 0)
+    uptime     = status_data.get('uptime_seconds', 0)
     mins, secs = divmod(uptime, 60)
     uptime_str = f"{mins}m {secs}s" if mins > 0 else f"{secs}s"
-    accuracy   = status_data.get('classifier_accuracy', 0.0)
-    correct    = status_data.get('correct_predictions', 0)
-    total_p    = status_data.get('total_predictable', 0)
+    gdelt_count = status_data.get('gdelt_events_ingested', 0)
 
     st.sidebar.markdown(f"""
     <div style='background:#0d1520;border:1px solid #1a2a3a;border-radius:8px;padding:12px 14px;margin-bottom:12px;'>
@@ -629,87 +648,63 @@ if status_data:
                 <div style='font-size:0.9rem;color:#c8d4e0;font-family:JetBrains Mono,monospace;font-weight:500;'>{status_data.get('raw_queue_depth', 0)}</div>
             </div>
             <div style='background:#080c10;border-radius:6px;padding:8px 10px;border:1px solid #1a2a3a;'>
-                <div style='font-size:0.6rem;color:#4a6a7a;text-transform:uppercase;margin-bottom:3px;'>Accuracy</div>
-                <div style='font-size:0.9rem;color:#2ed573;font-family:JetBrains Mono,monospace;font-weight:500;'>{accuracy:.1f}%</div>
+                <div style='font-size:0.6rem;color:#4a6a7a;text-transform:uppercase;margin-bottom:3px;'>GDELT Events</div>
+                <div style='font-size:0.9rem;color:#66fcf1;font-family:JetBrains Mono,monospace;font-weight:500;'>{gdelt_count}</div>
             </div>
             <div style='background:#080c10;border-radius:6px;padding:8px 10px;border:1px solid #1a2a3a;'>
-                <div style='font-size:0.6rem;color:#4a6a7a;text-transform:uppercase;margin-bottom:3px;'>Predictions</div>
-                <div style='font-size:0.9rem;color:#c8d4e0;font-family:JetBrains Mono,monospace;font-weight:500;'>{correct}/{total_p}</div>
+                <div style='font-size:0.6rem;color:#4a6a7a;text-transform:uppercase;margin-bottom:3px;'>Processed</div>
+                <div style='font-size:0.9rem;color:#c8d4e0;font-family:JetBrains Mono,monospace;font-weight:500;'>{status_data.get('total_tweets_processed', 0):,}</div>
             </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
 st.sidebar.markdown("""
-<div style='margin-bottom:8px;'>
-    <div style='font-size:0.65rem;color:#4a6a7a;text-transform:uppercase;letter-spacing:0.1em;font-family:JetBrains Mono,monospace;margin-bottom:8px;'>Analytics Parameters</div>
-    <div style='background:#0d1520;border:1px solid #1a2a3a;border-radius:8px;padding:10px 14px;'>
-        <div style='display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #1a2a3a;'>
-            <span style='font-size:0.72rem;color:#6a8a9a;'>DBSCAN Epsilon</span>
-            <span style='font-size:0.72rem;color:#66fcf1;font-family:JetBrains Mono,monospace;'>0.01 (~1.1km)</span>
-        </div>
-        <div style='display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #1a2a3a;'>
-            <span style='font-size:0.72rem;color:#6a8a9a;'>Min Samples</span>
-            <span style='font-size:0.72rem;color:#66fcf1;font-family:JetBrains Mono,monospace;'>4 posts</span>
-        </div>
-        <div style='display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #1a2a3a;'>
-            <span style='font-size:0.72rem;color:#6a8a9a;'>Temporal Window</span>
-            <span style='font-size:0.72rem;color:#66fcf1;font-family:JetBrains Mono,monospace;'>3.0 min</span>
-        </div>
-        <div style='display:flex;justify-content:space-between;padding:5px 0;'>
-            <span style='font-size:0.72rem;color:#6a8a9a;'>Z-Score Threshold</span>
-            <span style='font-size:0.72rem;color:#66fcf1;font-family:JetBrains Mono,monospace;'>3.0σ</span>
-        </div>
+<div style='background:#0d1520;border:1px solid #1a2a3a;border-radius:8px;padding:10px 14px;margin-bottom:12px;'>
+    <div style='font-size:0.65rem;color:#4a6a7a;text-transform:uppercase;letter-spacing:0.1em;font-family:JetBrains Mono,monospace;margin-bottom:10px;'>Detection Parameters</div>
+    <div style='display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #1a2a3a;'>
+        <span style='font-size:0.72rem;color:#6a8a9a;'>DBSCAN Epsilon</span>
+        <span style='font-size:0.72rem;color:#66fcf1;font-family:JetBrains Mono,monospace;'>0.01 (~1.1km)</span>
+    </div>
+    <div style='display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #1a2a3a;'>
+        <span style='font-size:0.72rem;color:#6a8a9a;'>Min Cluster Size</span>
+        <span style='font-size:0.72rem;color:#66fcf1;font-family:JetBrains Mono,monospace;'>4 events</span>
+    </div>
+    <div style='display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #1a2a3a;'>
+        <span style='font-size:0.72rem;color:#6a8a9a;'>Temporal Window</span>
+        <span style='font-size:0.72rem;color:#66fcf1;font-family:JetBrains Mono,monospace;'>3.0 min</span>
+    </div>
+    <div style='display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #1a2a3a;'>
+        <span style='font-size:0.72rem;color:#6a8a9a;'>Z-Score Threshold</span>
+        <span style='font-size:0.72rem;color:#66fcf1;font-family:JetBrains Mono,monospace;'>3.0σ</span>
+    </div>
+    <div style='display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #1a2a3a;'>
+        <span style='font-size:0.72rem;color:#6a8a9a;'>GDELT Poll Rate</span>
+        <span style='font-size:0.72rem;color:#66fcf1;font-family:JetBrains Mono,monospace;'>15 min</span>
+    </div>
+    <div style='display:flex;justify-content:space-between;padding:5px 0;'>
+        <span style='font-size:0.72rem;color:#6a8a9a;'>Crisis Categories</span>
+        <span style='font-size:0.72rem;color:#66fcf1;font-family:JetBrains Mono,monospace;'>12 types</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
 st.sidebar.markdown("""
-<div style='font-size:0.65rem;color:#4a6a7a;text-transform:uppercase;letter-spacing:0.1em;
-font-family:JetBrains Mono,monospace;margin-bottom:8px;margin-top:4px;'>Crisis Injector</div>
+<div style='background:#0d1520;border:1px solid #1a2a3a;border-radius:8px;padding:10px 14px;'>
+    <div style='font-size:0.65rem;color:#4a6a7a;text-transform:uppercase;letter-spacing:0.1em;font-family:JetBrains Mono,monospace;margin-bottom:10px;'>Crisis Categories</div>
+    <div style='display:flex;flex-wrap:wrap;gap:5px;'>
+        <span style='font-size:0.65rem;padding:2px 8px;border-radius:10px;background:#2d1515;color:#fc8181;'>🔥 Fire</span>
+        <span style='font-size:0.65rem;padding:2px 8px;border-radius:10px;background:#152040;color:#63b3ed;'>🌊 Flood</span>
+        <span style='font-size:0.65rem;padding:2px 8px;border-radius:10px;background:#2d1a0e;color:#fb923c;'>🌍 Earthquake</span>
+        <span style='font-size:0.65rem;padding:2px 8px;border-radius:10px;background:#0a2030;color:#22d3ee;'>🌊 Tsunami</span>
+        <span style='font-size:0.65rem;padding:2px 8px;border-radius:10px;background:#1e1030;color:#a78bfa;'>🌪️ Tornado</span>
+        <span style='font-size:0.65rem;padding:2px 8px;border-radius:10px;background:#2d0a0a;color:#f87171;'>🌋 Volcanic</span>
+        <span style='font-size:0.65rem;padding:2px 8px;border-radius:10px;background:#1a1008;color:#d97706;'>⛰️ Landslide</span>
+        <span style='font-size:0.65rem;padding:2px 8px;border-radius:10px;background:#2d1f00;color:#fbbf24;'>☀️ Drought</span>
+        <span style='font-size:0.65rem;padding:2px 8px;border-radius:10px;background:#2d2515;color:#f6e05e;'>📣 Unrest</span>
+        <span style='font-size:0.65rem;padding:2px 8px;border-radius:10px;background:#251535;color:#b794f4;'>🦠 Outbreak</span>
+        <span style='font-size:0.65rem;padding:2px 8px;border-radius:10px;background:#2d0505;color:#f87171;'>⚔️ Conflict</span>
+        <span style='font-size:0.65rem;padding:2px 8px;border-radius:10px;background:#0f1620;color:#94a3b8;'>🏗️ Infrastructure</span>
+    </div>
+</div>
 """, unsafe_allow_html=True)
-
-# Initialize inject message state
-if "last_inject_msg" not in st.session_state:
-    st.session_state.last_inject_msg = ""
-if "last_inject_success" not in st.session_state:
-    st.session_state.last_inject_success = None
-
-inject_cat = st.sidebar.selectbox("Category", ["Fire", "Flood", "Civic Unrest", "Outbreak"], label_visibility="collapsed")
-inject_landmark = st.sidebar.selectbox("Landmark", [
-    "Big Ben", "Hyde Park", "London Eye", "Tower Bridge",
-    "Trafalgar Square", "Soho", "Piccadilly Circus",
-    "India Gate", "Connaught Place", "Red Fort", "Chandni Chowk",
-    "Motijheel", "Gulshan", "Dhanmondi", "Old Dhaka",
-    "Monas", "Kota Tua", "Sudirman", "Kemang",
-], label_visibility="collapsed")
-inject_duration = st.sidebar.slider("Duration (seconds)", 15, 60, 30)
-
-if st.sidebar.button("🚨 Inject Crisis Event", use_container_width=True, type="primary"):
-    trigger_injection(inject_cat, inject_landmark, inject_duration)
-
-st.sidebar.markdown("""
-<div style='font-size:0.65rem;color:#4a6a7a;text-transform:uppercase;letter-spacing:0.1em;
-font-family:JetBrains Mono,monospace;margin-bottom:8px;margin-top:12px;'>Quick Presets</div>
-""", unsafe_allow_html=True)
-
-if st.sidebar.button("🔥 Fire — London Eye", use_container_width=True):
-    trigger_injection("Fire", "London Eye", 30)
-
-if st.sidebar.button("🌊 Flood — Big Ben", use_container_width=True):
-    trigger_injection("Flood", "Big Ben", 40)
-
-if st.sidebar.button("📣 Unrest — Trafalgar Sq", use_container_width=True):
-    trigger_injection("Civic Unrest", "Trafalgar Square", 30)
-
-if st.sidebar.button("🦠 Outbreak — India Gate", use_container_width=True):
-    trigger_injection("Outbreak", "India Gate", 30)
-
-# Show persistent inject message that survives auto-refresh
-if st.session_state.last_inject_msg:
-    time_since = time.time() - st.session_state.get("last_inject_time", 0)
-    if time_since < 10:  # Show for 10 seconds
-        if st.session_state.last_inject_success:
-            st.sidebar.success(st.session_state.last_inject_msg)
-        else:
-            st.sidebar.error(st.session_state.last_inject_msg)

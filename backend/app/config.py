@@ -79,8 +79,16 @@ REGION_ANCHORS = [
 ]
 
 # --- Categories ---
-CATEGORIES = ["General", "Fire", "Flood", "Civic Unrest", "Outbreak"]
-CRISIS_CATEGORIES = ["Fire", "Flood", "Civic Unrest", "Outbreak"]
+CATEGORIES = [
+    "Fire", "Flood", "Earthquake", "Tsunami", "Tornado",
+    "Volcanic", "Landslide", "Drought", "Civic Unrest",
+    "Outbreak", "Conflict", "Infrastructure", "General"
+]
+CRISIS_CATEGORIES = [
+    "Fire", "Flood", "Earthquake", "Tsunami", "Tornado",
+    "Volcanic", "Landslide", "Drought", "Civic Unrest",
+    "Outbreak", "Conflict", "Infrastructure"
+]
 
 # --- ST-DBSCAN Parameters ---
 DBSCAN_EPS = 0.01            # Maximum spatial distance in degrees (~1.1 km)
