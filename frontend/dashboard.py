@@ -325,172 +325,217 @@ st.write("")
 col_left, col_right = st.columns([0.65, 0.35])
 
 with col_left:
-    st.markdown("<div class='section-header'>🗺️ Spatio-Temporal Event Epicenters</div>", unsafe_allow_html=True)
+    tab1, tab2 = st.tabs(["🗺️ Crisis Map", "🌪️ Live Weather"])
+    with tab1:
+        st.markdown("<div class='section-header'>🗺️ Spatio-Temporal Event Epicenters</div>", unsafe_allow_html=True)
 
-    tweets_list, alerts_list = [], []
+        tweets_list, alerts_list = [], []
 
-    for t in tweets_data:
-        if isinstance(t, dict) and t.get("lat") is not None and t.get("lon") is not None:
-            cat = t.get("category", "General")
-            color_map = {
-                "Fire":           [231, 76,  60,  200],
-                "Flood":          [52,  152, 219, 200],
-                "Earthquake":     [249, 115, 22,  200],
-                "Tsunami":        [6,   182, 212, 200],
-                "Tornado":        [139, 92,  246, 200],
-                "Volcanic":       [239, 68,  68,  200],
-                "Landslide":      [146, 64,  14,  200],
-                "Drought":        [217, 119, 6,   200],
-                "Civic Unrest":   [241, 196, 15,  200],
-                "Outbreak":       [168, 85,  247, 200],
-                "Conflict":       [220, 38,  38,  200],
-                "Infrastructure": [100, 116, 139, 200],
-            }
-            tweets_list.append({
-                "lat": t["lat"], "lon": t["lon"], "category": cat,
-                "landmark": t.get("landmark", "Unknown"),
-                "color": color_map.get(cat, [46,204,113,100]),
-                "tweet_count": 1, "z_score": "N/A"
-            })
+        for t in tweets_data:
+            if isinstance(t, dict) and t.get("lat") is not None and t.get("lon") is not None:
+                cat = t.get("category", "General")
+                color_map = {
+                    "Fire":           [231, 76,  60,  200],
+                    "Flood":          [52,  152, 219, 200],
+                    "Earthquake":     [249, 115, 22,  200],
+                    "Tsunami":        [6,   182, 212, 200],
+                    "Tornado":        [139, 92,  246, 200],
+                    "Volcanic":       [239, 68,  68,  200],
+                    "Landslide":      [146, 64,  14,  200],
+                    "Drought":        [217, 119, 6,   200],
+                    "Civic Unrest":   [241, 196, 15,  200],
+                    "Outbreak":       [168, 85,  247, 200],
+                    "Conflict":       [220, 38,  38,  200],
+                    "Infrastructure": [100, 116, 139, 200],
+                }
+                tweets_list.append({
+                    "lat": t["lat"], "lon": t["lon"], "category": cat,
+                    "landmark": t.get("landmark", "Unknown"),
+                    "color": color_map.get(cat, [46,204,113,100]),
+                    "tweet_count": 1, "z_score": "N/A"
+                })
 
-    for a in active_alerts:
-        if isinstance(a, dict) and a.get("lat") is not None and a.get("lon") is not None:
-            alerts_list.append({
-                "lat": a["lat"], "lon": a["lon"],
-                "category": a.get("category", "Alert"),
-                "tweet_count": a.get("tweet_count", 0),
-                "z_score": round(a.get("z_score", 0.0), 2),
-                "landmark": a.get("landmark", "Detected Cluster")
-            })
+        for a in active_alerts:
+            if isinstance(a, dict) and a.get("lat") is not None and a.get("lon") is not None:
+                alerts_list.append({
+                    "lat": a["lat"], "lon": a["lon"],
+                    "category": a.get("category", "Alert"),
+                    "tweet_count": a.get("tweet_count", 0),
+                    "z_score": round(a.get("z_score", 0.0), 2),
+                    "landmark": a.get("landmark", "Detected Cluster")
+                })
 
-    df_tweets = pd.DataFrame(tweets_list) if tweets_list else pd.DataFrame(
-        columns=["lat","lon","category","landmark","color","tweet_count","z_score"])
-    df_alerts = pd.DataFrame(alerts_list) if alerts_list else pd.DataFrame(
-        columns=["lat","lon","category","tweet_count","z_score","landmark"])
+        df_tweets = pd.DataFrame(tweets_list) if tweets_list else pd.DataFrame(
+            columns=["lat","lon","category","landmark","color","tweet_count","z_score"])
+        df_alerts = pd.DataFrame(alerts_list) if alerts_list else pd.DataFrame(
+            columns=["lat","lon","category","tweet_count","z_score","landmark"])
 
-    # ── Map centroid ──
-    map_focus = st.session_state.get("map_focus")
+        # ── Map centroid ──
+        map_focus = st.session_state.get("map_focus")
 
-    
-    if alerts_list:
-        center_lat = np.mean([a["lat"] for a in alerts_list])
-        center_lon = np.mean([a["lon"] for a in alerts_list])
-        zoom = 11.0
-    elif tweets_list:
-        center_lat = np.mean([t["lat"] for t in tweets_list])
-        center_lon = np.mean([t["lon"] for t in tweets_list])
-        zoom = 10.0
-    else:
-        center_lat, center_lon, zoom = 20.0, 0.0, 1.5
+        
+        if alerts_list:
+            center_lat = np.mean([a["lat"] for a in alerts_list])
+            center_lon = np.mean([a["lon"] for a in alerts_list])
+            zoom = 4.0
+        else:
+            center_lat, center_lon, zoom = 20.0, 10.0, 1.8
 
-    st.pydeck_chart(pdk.Deck(
-        map_style="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
-        initial_view_state=pdk.ViewState(
-            latitude=center_lat,
-            longitude=center_lon,
-            zoom=zoom,
-            pitch=20
-        ),
-        layers=[
-            pdk.Layer("HeatmapLayer", data=df_tweets, get_position="[lon, lat]",
-                      get_weight=1, radiusPixels=60, opacity=0.4),
-            pdk.Layer("ScatterplotLayer", data=df_tweets, get_position="[lon, lat]",
-                      get_color="color", get_radius=120, pickable=True),
-            pdk.Layer("ScatterplotLayer", data=df_alerts, get_position="[lon, lat]",
-                      get_color="[231,76,60,60]", get_line_color="[231,76,60,255]",
-                      line_width_min_pixels=2, get_radius=600, pickable=True),
-        ],
-        tooltip={
-            "html": "<b>Category:</b> {category}<br/><b>Landmark:</b> {landmark}<br/><b>Reports:</b> {tweet_count}<br/><b>Z-Score:</b> {z_score}",
-            "style": {"background-color":"#0d1520","color":"#ffffff","border":"1px solid #66fcf1","border-radius":"6px","padding":"8px","font-family":"JetBrains Mono, monospace","font-size":"12px"}
-        },
-        height=480
-    ), key=f"map_{center_lat:.4f}_{center_lon:.4f}_{zoom}")
+        st.pydeck_chart(pdk.Deck(
+            map_style="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
+            initial_view_state=pdk.ViewState(
+                latitude=center_lat,
+                longitude=center_lon,
+                zoom=zoom,
+                pitch=20
+            ),
+            layers=[
+                pdk.Layer("HeatmapLayer", data=df_tweets, get_position="[lon, lat]",
+                        get_weight=1, radiusPixels=60, opacity=0.4),
+                pdk.Layer("ScatterplotLayer", data=df_tweets, get_position="[lon, lat]",
+                        get_color="color", get_radius=120, pickable=True),
+                pdk.Layer("ScatterplotLayer", data=df_alerts, get_position="[lon, lat]",
+                        get_color="[231,76,60,60]", get_line_color="[231,76,60,255]",
+                        line_width_min_pixels=2, get_radius=600, pickable=True),
+            ],
+            tooltip={
+                "html": "<b>Category:</b> {category}<br/><b>Landmark:</b> {landmark}<br/><b>Reports:</b> {tweet_count}<br/><b>Z-Score:</b> {z_score}",
+                "style": {"background-color":"#0d1520","color":"#ffffff","border":"1px solid #66fcf1","border-radius":"6px","padding":"8px","font-family":"JetBrains Mono, monospace","font-size":"12px"}
+            },
+            height=480
+        ), key=f"map_{center_lat:.4f}_{center_lon:.4f}_{zoom}")
 
-    # ── Charts ────────────────────────────────────────────────────────────────
-    st.write("")
-    st.markdown("<div class='section-header'>📊 Real-Time Stream Analytics</div>", unsafe_allow_html=True)
-    c_chart1, c_chart2 = st.columns(2)
+        # ── Charts ────────────────────────────────────────────────────────────────
+        st.write("")
+        st.markdown("<div class='section-header'>📊 Real-Time Stream Analytics</div>", unsafe_allow_html=True)
+        c_chart1, c_chart2 = st.columns(2)
 
-    base_layout = dict(
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='#6a8a9a', family='JetBrains Mono, monospace', size=11),
-        xaxis=dict(gridcolor='#0d1a24', linecolor='#1a2a3a',
-                   tickfont=dict(color='#4a6a7a', size=10),
-                   showspikes=True, spikecolor='#66fcf1',
-                   spikethickness=1, spikedash='dot'),
-        yaxis=dict(gridcolor='#0d1a24', linecolor='#1a2a3a',
-                   tickfont=dict(color='#4a6a7a', size=10),
-                   showspikes=True, spikecolor='#66fcf1',
-                   spikethickness=1, spikedash='dot'),
-        legend=dict(bgcolor='rgba(8,12,16,0.8)', bordercolor='#1a2a3a',
-                    borderwidth=1, font=dict(size=10, color='#8aa4b8'),
-                    orientation='h', yanchor='bottom', y=1.02, xanchor='left', x=0),
-        hoverlabel=dict(bgcolor='#0d1520', bordercolor='#66fcf1',
-                        font=dict(color='#c8d4e0', size=11, family='JetBrains Mono, monospace')),
-        hovermode='x unified',
-        margin=dict(l=40, r=20, t=60, b=40),
-        height=300,
-    )
+        base_layout = dict(
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font=dict(color='#6a8a9a', family='JetBrains Mono, monospace', size=11),
+            xaxis=dict(gridcolor='#0d1a24', linecolor='#1a2a3a',
+                    tickfont=dict(color='#4a6a7a', size=10),
+                    showspikes=True, spikecolor='#66fcf1',
+                    spikethickness=1, spikedash='dot'),
+            yaxis=dict(gridcolor='#0d1a24', linecolor='#1a2a3a',
+                    tickfont=dict(color='#4a6a7a', size=10),
+                    showspikes=True, spikecolor='#66fcf1',
+                    spikethickness=1, spikedash='dot'),
+            legend=dict(bgcolor='rgba(8,12,16,0.8)', bordercolor='#1a2a3a',
+                        borderwidth=1, font=dict(size=10, color='#8aa4b8'),
+                        orientation='h', yanchor='bottom', y=1.02, xanchor='left', x=0),
+            hoverlabel=dict(bgcolor='#0d1520', bordercolor='#66fcf1',
+                            font=dict(color='#c8d4e0', size=11, family='JetBrains Mono, monospace')),
+            hovermode='x unified',
+            margin=dict(l=40, r=20, t=60, b=40),
+            height=300,
+        )
 
-    title_style = dict(font=dict(size=13, color='#c8d4e0', family='Inter, sans-serif'), x=0.02, y=0.97)
+        title_style = dict(font=dict(size=13, color='#c8d4e0', family='Inter, sans-serif'), x=0.02, y=0.97)
 
-    with c_chart1:
-        if len(tweets_data) > 0:
-            df_chart = pd.DataFrame(tweets_data)
-            if 'timestamp' in df_chart.columns and 'category' in df_chart.columns:
-                df_chart['datetime'] = pd.to_datetime(df_chart['timestamp'], unit='s')
-                df_chart['time_bin'] = df_chart['datetime'].dt.floor('10s')
-                grouped = df_chart.groupby(['time_bin','category']).size().unstack(fill_value=0).reset_index()
-                for c in CAT_COLORS:
-                    if c not in grouped.columns: grouped[c] = 0
-                melted = grouped.melt(id_vars=['time_bin'], value_vars=list(CAT_COLORS.keys()),
-                                      var_name='Category', value_name='Volume')
+        with c_chart1:
+            if len(tweets_data) > 0:
+                df_chart = pd.DataFrame(tweets_data)
+                if 'timestamp' in df_chart.columns and 'category' in df_chart.columns:
+                    df_chart['datetime'] = pd.to_datetime(df_chart['timestamp'], unit='s')
+                    df_chart['time_bin'] = df_chart['datetime'].dt.floor('10s')
+                    grouped = df_chart.groupby(['time_bin','category']).size().unstack(fill_value=0).reset_index()
+                    for c in CAT_COLORS:
+                        if c not in grouped.columns: grouped[c] = 0
+                    melted = grouped.melt(id_vars=['time_bin'], value_vars=list(CAT_COLORS.keys()),
+                                        var_name='Category', value_name='Volume')
 
-                fig_line = go.Figure()
-                for cat, color in CAT_COLORS.items():
-                    cat_data = melted[melted['Category'] == cat]
-                    if cat_data['Volume'].sum() == 0:
-                        continue
-                    fig_line.add_trace(go.Scatter(
-                        x=cat_data['time_bin'], y=cat_data['Volume'],
-                        name=cat, mode='lines',
-                        line=dict(color=color, width=2),
-                        fill='tozeroy', fillcolor=hex_to_rgba(color, 0.08),
-                        hovertemplate=f'<b>{cat}</b><br>%{{y}} posts<extra></extra>',
+                    fig_line = go.Figure()
+                    for cat, color in CAT_COLORS.items():
+                        cat_data = melted[melted['Category'] == cat]
+                        if cat_data['Volume'].sum() == 0:
+                            continue
+                        fig_line.add_trace(go.Scatter(
+                            x=cat_data['time_bin'], y=cat_data['Volume'],
+                            name=cat, mode='lines',
+                            line=dict(color=color, width=2),
+                            fill='tozeroy', fillcolor=hex_to_rgba(color, 0.08),
+                            hovertemplate=f'<b>{cat}</b><br>%{{y}} posts<extra></extra>',
+                        ))
+                    fig_line.update_layout(**base_layout, title=dict(text='Signal Volume (10s bins)', **title_style))
+                    st.plotly_chart(fig_line, use_container_width=True, theme=None)
+            else:
+                st.info("Waiting for stream data...")
+
+        with c_chart2:
+            if len(tweets_data) > 0:
+                df_cat = pd.DataFrame(tweets_data)
+                if 'category' in df_cat.columns:
+                    counts = df_cat['category'].value_counts().reset_index()
+                    counts.columns = ['Category', 'Volume']
+                    counts = counts[counts['Volume'] > 0]
+
+                    fig_bar = go.Figure()
+                    fig_bar.add_trace(go.Bar(
+                        x=counts['Category'], y=counts['Volume'],
+                        marker=dict(color=[CAT_COLORS.get(c, '#4a6a7a') for c in counts['Category']],
+                                    opacity=0.85, line=dict(width=0)),
+                        hovertemplate='<b>%{x}</b><br>%{y} posts<extra></extra>',
+                        text=counts['Volume'], textposition='outside',
+                        textfont=dict(color='#6a8a9a', size=11, family='JetBrains Mono, monospace'),
                     ))
-                fig_line.update_layout(**base_layout, title=dict(text='Signal Volume (10s bins)', **title_style))
-                st.plotly_chart(fig_line, use_container_width=True, theme=None)
-        else:
-            st.info("Waiting for stream data...")
+                    bar_layout = {**base_layout}
+                    bar_layout['xaxis'] = {**base_layout['xaxis'], 'showspikes': False}
+                    bar_layout['hovermode'] = 'x'
+                    fig_bar.update_layout(**bar_layout, bargap=0.3,
+                                        title=dict(text='Category Distribution', **title_style))
+                    st.plotly_chart(fig_bar, use_container_width=True, theme=None)
+            else:
+                st.info("Waiting for stream data...")
+        
+        # --- EVENT TIMELINE ---
+        st.write("")
+        st.markdown("<div class='section-header'>📅 Crisis Event Timeline (Last 24 Hours)</div>", unsafe_allow_html=True)
 
-    with c_chart2:
         if len(tweets_data) > 0:
-            df_cat = pd.DataFrame(tweets_data)
-            if 'category' in df_cat.columns:
-                counts = df_cat['category'].value_counts().reset_index()
-                counts.columns = ['Category', 'Volume']
-                counts = counts[counts['Volume'] > 0]
+            df_timeline = pd.DataFrame(tweets_data)
+            if 'timestamp' in df_timeline.columns:
+                df_timeline['datetime'] = pd.to_datetime(df_timeline['timestamp'], unit='s')
+                df_timeline['hour'] = df_timeline['datetime'].dt.floor('h')
 
-                fig_bar = go.Figure()
-                fig_bar.add_trace(go.Bar(
-                    x=counts['Category'], y=counts['Volume'],
-                    marker=dict(color=[CAT_COLORS.get(c, '#4a6a7a') for c in counts['Category']],
-                                opacity=0.85, line=dict(width=0)),
-                    hovertemplate='<b>%{x}</b><br>%{y} posts<extra></extra>',
-                    text=counts['Volume'], textposition='outside',
-                    textfont=dict(color='#6a8a9a', size=11, family='JetBrains Mono, monospace'),
-                ))
-                bar_layout = {**base_layout}
-                bar_layout['xaxis'] = {**base_layout['xaxis'], 'showspikes': False}
-                bar_layout['hovermode'] = 'x'
-                fig_bar.update_layout(**bar_layout, bargap=0.3,
-                                      title=dict(text='Category Distribution', **title_style))
-                st.plotly_chart(fig_bar, use_container_width=True, theme=None)
-        else:
-            st.info("Waiting for stream data...")
+                hourly = df_timeline.groupby(['hour','category']).size().reset_index(name='count')
 
+                fig_timeline = go.Figure()
+                for cat, color in CAT_COLORS.items():
+                    cat_data = hourly[hourly['category'] == cat]
+                    if len(cat_data) == 0:
+                        continue
+                    fig_timeline.add_trace(go.Bar(
+                        x=cat_data['hour'],
+                        y=cat_data['count'],
+                        name=cat,
+                        marker_color=color,
+                        opacity=0.8,
+                        hovertemplate=f'<b>{cat}</b><br>%{{y}} events<br>%{{x}}<extra></extra>',
+                    ))
+
+                fig_timeline.update_layout(
+                    # FIX: STRIP BOTH CONFLICTING KEYS ('height' AND 'margin') DURING THE UNPACKING PROCESS
+                    **{k: v for k, v in base_layout.items() if k not in ('height', 'margin')},
+                    
+                    title=dict(text='Hourly Crisis Event Distribution', **title_style),
+                    barmode='stack',
+                    height=220,  
+                    margin=dict(l=40, r=20, t=40, b=40),  # THIS WILL NOW SAFELY SPECIFY ENGINE CUSTOM MARGINS
+                    showlegend=False,
+                )
+                st.plotly_chart(fig_timeline, use_container_width=True, theme=None)
+
+    with tab2:
+        st.markdown("<div class='section-header'>Live Global Weather — Powered by Windy</div>", unsafe_allow_html=True)
+        st.components.v1.iframe(
+            "https://embed.windy.com/embed2.html?lat=20&lon=10&detailLat=20&detailLon=10&width=650&height=450&zoom=2&level=surface&overlay=wind&product=ecmwf&menu=&message=true&marker=&calendar=now&pressure=&type=map&location=coordinates&detail=&metricWind=default&metricTemp=default&radarRange=-1",
+            height=480,
+            scrolling=False
+        )
+        st.caption("🌪️ Live wind patterns, storm tracks, and precipitation — updated every 3 hours from ECMWF model")
+        
 with col_right:
     st.markdown("<div class='section-header'>🔔 Active Alerts Inbox</div>", unsafe_allow_html=True)
     if not active_alerts:
@@ -596,22 +641,53 @@ with col_right:
                     "Conflict":       "badge-conflict",
                     "Infrastructure": "badge-infrastructure",
                 }.get(cat, "badge-general")
+                
                 cat_class    = card_cat_classes.get(cat, "")
                 landmark     = t.get("landmark", "Unknown")
                 t_time       = time.strftime("%H:%M:%S", time.localtime(t.get("timestamp", time.time())))
                 text         = t.get("text", "")
-                source       = t.get("source", "simulator")
-                source_badge = "🌐 GDELT" if source == "gdelt" else "🤖 SIM"
-                source_color = "#66fcf1" if source == "gdelt" else "#2d4a5a"
+                
+                # --- NEW EXTRACTS FOR SEVERITY & SOURCE LINKS ---
+                severity_score = t.get("severity_score", 0)
+                severity_label = t.get("severity_label", "")
+                severity_color = t.get("severity_color", "#6b7280")
+                source         = t.get("source", "simulator")
+                source_url     = t.get("source_url", "")
 
+                # SOURCE BADGE MATCHING MAP
+                if source == "gdelt":
+                    source_badge = "🌐 GDELT"
+                    source_color_hex = "#66fcf1"
+                elif source == "openweathermap":
+                    source_badge = "🌤️ WEATHER"
+                    source_color_hex = "#3b82f6"
+                elif source == "newsapi":
+                    source_badge = "📰 NEWS"
+                    source_color_hex = "#a855f7"
+                else:
+                    source_badge = "🤖 SIM"
+                    source_color_hex = "#2d4a5a"
+
+                # CARD CONTAINER AND HEADER RENDER
                 card  = f"<div class='tweet-card {cat_class}'>"
                 card += "<div class='tweet-header'>"
                 card += f"<span class='category-badge {badge_class}'>{cat.upper()}</span>"
                 card += f"<span class='landmark-tag'>📍 {landmark}</span>"
-                card += f"<span style='font-size:0.65rem;color:{source_color};font-family:JetBrains Mono,monospace;'>{source_badge}</span>"
+                card += f"<span style='font-size:0.65rem;color:{source_color_hex};font-family:JetBrains Mono,monospace;'>{source_badge}</span>"
                 card += f"<span class='tweet-time'>{t_time}</span>"
                 card += "</div>"
+
+                # INJECT SEVERITY BADGE SUB-CONTAINER IF PRESENT
+                if severity_label:
+                    card += f"<div style='margin-bottom:5px;'><span style='font-size:0.6rem;font-family:JetBrains Mono,monospace;color:{severity_color};background:{severity_color}20;padding:1px 6px;border-radius:3px;border:1px solid {severity_color}40;'>{severity_label} {severity_score}/10</span></div>"
+
+                # TEXT BODY CONTAINER
                 card += f"<p class='tweet-text'>{text}</p>"
+
+                # INJECT REDIRECT HYPERLINK TO SOURCES
+                if source_url and source_url != "nan":
+                    card += f"<a href='{source_url}' target='_blank' style='font-size:0.65rem;color:#4a6a7a;text-decoration:none;font-family:JetBrains Mono,monospace;'>↗ Source</a>"
+
                 card += "</div>"
                 feed_html += card
 
@@ -627,10 +703,14 @@ st.sidebar.markdown("""
 """, unsafe_allow_html=True)
 
 if status_data:
-    uptime     = status_data.get('uptime_seconds', 0)
-    mins, secs = divmod(uptime, 60)
-    uptime_str = f"{mins}m {secs}s" if mins > 0 else f"{secs}s"
-    gdelt_count = status_data.get('gdelt_events_ingested', 0)
+    uptime       = status_data.get('uptime_seconds', 0)
+    mins, secs   = divmod(uptime, 60)
+    uptime_str   = f"{mins}m {secs}s" if mins > 0 else f"{secs}s"
+    
+    # EXTRACT ALL INDIVIDUAL STREAM COUNT STATISTICS FROM THE INCOMING DETECTOR STATUS
+    gdelt_count  = status_data.get('gdelt_events', 0)
+    weather_count = status_data.get('weather_events', 0)
+    news_count   = status_data.get('news_events', 0)
 
     st.sidebar.markdown(f"""
     <div style='background:#0d1520;border:1px solid #1a2a3a;border-radius:8px;padding:12px 14px;margin-bottom:12px;'>
@@ -644,16 +724,20 @@ if status_data:
                 <div style='font-size:0.9rem;color:#c8d4e0;font-family:JetBrains Mono,monospace;font-weight:500;'>{uptime_str}</div>
             </div>
             <div style='background:#080c10;border-radius:6px;padding:8px 10px;border:1px solid #1a2a3a;'>
-                <div style='font-size:0.6rem;color:#4a6a7a;text-transform:uppercase;margin-bottom:3px;'>Queue</div>
-                <div style='font-size:0.9rem;color:#c8d4e0;font-family:JetBrains Mono,monospace;font-weight:500;'>{status_data.get('raw_queue_depth', 0)}</div>
+                <div style='font-size:0.6rem;color:#4a6a7a;text-transform:uppercase;margin-bottom:3px;'>Total Events</div>
+                <div style='font-size:0.9rem;color:#c8d4e0;font-family:JetBrains Mono,monospace;font-weight:500;'>{status_data.get('total_tweets_processed', 0):,}</div>
             </div>
             <div style='background:#080c10;border-radius:6px;padding:8px 10px;border:1px solid #1a2a3a;'>
-                <div style='font-size:0.6rem;color:#4a6a7a;text-transform:uppercase;margin-bottom:3px;'>GDELT Events</div>
+                <div style='font-size:0.6rem;color:#66fcf1;text-transform:uppercase;margin-bottom:3px;'>🌐 GDELT</div>
                 <div style='font-size:0.9rem;color:#66fcf1;font-family:JetBrains Mono,monospace;font-weight:500;'>{gdelt_count}</div>
             </div>
             <div style='background:#080c10;border-radius:6px;padding:8px 10px;border:1px solid #1a2a3a;'>
-                <div style='font-size:0.6rem;color:#4a6a7a;text-transform:uppercase;margin-bottom:3px;'>Processed</div>
-                <div style='font-size:0.9rem;color:#c8d4e0;font-family:JetBrains Mono,monospace;font-weight:500;'>{status_data.get('total_tweets_processed', 0):,}</div>
+                <div style='font-size:0.6rem;color:#3b82f6;text-transform:uppercase;margin-bottom:3px;'>🌤️ Weather</div>
+                <div style='font-size:0.9rem;color:#3b82f6;font-family:JetBrains Mono,monospace;font-weight:500;'>{weather_count}</div>
+            </div>
+            <div style='background:#080c10;border-radius:6px;padding:8px 10px;border:1px solid #1a2a3a;grid-column: span 2;'>
+                <div style='font-size:0.6rem;color:#a855f7;text-transform:uppercase;margin-bottom:3px;'>📰 NewsAPI</div>
+                <div style='font-size:0.9rem;color:#a855f7;font-family:JetBrains Mono,monospace;font-weight:500;'>{news_count}</div>
             </div>
         </div>
     </div>

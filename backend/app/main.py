@@ -96,6 +96,9 @@ async def processing_worker():
                     "avg_tone":     raw_event.get("avg_tone", 0.0),
                 }
 
+                from backend.app.severity import calculate_severity_score
+                processed_event = calculate_severity_score(processed_event)
+
                 tweets_db.append(processed_event)
                 total_processed_count += 1
 
@@ -136,6 +139,47 @@ async def analytics_worker():
     except asyncio.CancelledError:
         logger.info("Analytics Engine worker stopping.")
 
+async def weather_worker():
+    """Fetches severe weather alerts every 30 minutes."""
+    from backend.app.weather import fetch_severe_weather_alerts
+    logger.info("Weather worker started — polling every 30 minutes.")
+    try:
+        while True:
+            try:
+                loop   = asyncio.get_event_loop()
+                events = await loop.run_in_executor(None, fetch_severe_weather_alerts)
+                for event in events:
+                    import time as t
+                    event["timestamp"] = t.time()
+                    await raw_queue.put(event)
+                logger.info(f"Weather: {len(events)} severe alerts added to pipeline.")
+            except Exception as e:
+                logger.error(f"Weather worker error: {e}", exc_info=True)
+            await asyncio.sleep(1800)  # 30 minutes
+    except asyncio.CancelledError:
+        logger.info("Weather worker stopping.")
+
+
+async def news_worker():
+    """Fetches NewsAPI headlines every 60 minutes."""
+    from backend.app.newsapi import fetch_crisis_headlines
+    logger.info("NewsAPI worker started — polling every 60 minutes.")
+    try:
+        while True:
+            try:
+                loop     = asyncio.get_event_loop()
+                articles = await loop.run_in_executor(None, fetch_crisis_headlines)
+                for article in articles:
+                    import time as t
+                    article["timestamp"] = t.time()
+                    await raw_queue.put(article)
+                logger.info(f"NewsAPI: {len(articles)} headlines added to pipeline.")
+            except Exception as e:
+                logger.error(f"News worker error: {e}", exc_info=True)
+            await asyncio.sleep(3600)  # 60 minutes
+    except asyncio.CancelledError:
+        logger.info("News worker stopping.")
+
 
 # --- LIFESPAN ---
 
@@ -145,18 +189,22 @@ async def lifespan(app: FastAPI):
     reload_spacy()
     await get_classifier_async()
 
-    gdelt_task    = asyncio.create_task(gdelt_worker())
-    proc_task     = asyncio.create_task(processing_worker())
-    anal_task     = asyncio.create_task(analytics_worker())
+    gdelt_task   = asyncio.create_task(gdelt_worker())
+    proc_task    = asyncio.create_task(processing_worker())
+    anal_task    = asyncio.create_task(analytics_worker())
+    weather_task = asyncio.create_task(weather_worker())
+    news_task    = asyncio.create_task(news_worker())
 
     logger.info("AegisStream pipeline workers started.")
     yield
 
     logger.info("Stopping AegisStream services...")
-    gdelt_task.cancel()
-    proc_task.cancel()
-    anal_task.cancel()
-    await asyncio.gather(gdelt_task, proc_task, anal_task, return_exceptions=True)
+    for task in [gdelt_task, proc_task, anal_task, weather_task, news_task]:
+        task.cancel()
+    await asyncio.gather(
+        gdelt_task, proc_task, anal_task, weather_task, news_task,
+        return_exceptions=True
+    )
     logger.info("Pipeline workers shut down.")
 
 
@@ -206,8 +254,15 @@ async def get_alerts():
 
 @app.get("/api/status")
 async def get_status():
+    from backend.app.gdelt_ingestor import get_gdelt_ingestor
     uptime = time.time() - system_start_time
     tps    = total_processed_count / uptime if uptime > 0 else 0.0
+
+    # Count by source
+    all_events    = list(tweets_db)
+    gdelt_count   = sum(1 for e in all_events if e.get("source") == "gdelt")
+    weather_count = sum(1 for e in all_events if e.get("source") == "openweathermap")
+    news_count    = sum(1 for e in all_events if e.get("source") == "newsapi")
 
     return {
         "status":                 "operational",
@@ -221,5 +276,8 @@ async def get_status():
         "classifier_accuracy":    100.0,
         "total_predictable":      total_predictable,
         "correct_predictions":    correct_predictions,
-        "gdelt_events_ingested":  get_gdelt_ingestor().events_ingested,
+        "gdelt_events":           gdelt_count,
+        "weather_events":         weather_count,
+        "news_events":            news_count,
+        "gdelt_total_ingested":   get_gdelt_ingestor().events_ingested,
     }

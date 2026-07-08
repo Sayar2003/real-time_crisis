@@ -255,25 +255,25 @@ class AnalyticsEngine:
 
 
 async def _attach_llm_summary(self, alert_id: str):
-    """Generates LLM summary, attaches it to alert, and sends Slack notification."""
+    """Generates LLM summary, attaches to alert, sends Slack and Telegram."""
     try:
         from backend.app.llm import generate_alert_summary
         from backend.app.notifier import send_slack_alert
+        from backend.app.telegram_notifier import send_telegram_alert
 
         alert = self.active_alerts.get(alert_id)
         if alert is None:
             return
 
-        # Generate LLM summary
         summary = await generate_alert_summary(alert)
 
-        # Attach to alert
         if alert_id in self.active_alerts:
             self.active_alerts[alert_id]["llm_summary"] = summary
             logger.info(f"LLM summary attached to {alert_id}")
 
-        # Send Slack notification with summary
+        # Send both Slack and Telegram
         await send_slack_alert(alert, llm_summary=summary)
+        await send_telegram_alert(alert, llm_summary=summary)
 
     except Exception as e:
-        logger.error(f"Failed to attach LLM summary or send Slack for {alert_id}: {e}")
+        logger.error(f"Failed to attach LLM summary for {alert_id}: {e}")
