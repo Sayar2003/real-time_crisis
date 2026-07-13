@@ -160,8 +160,8 @@ st.markdown("""
 .tweet-card-outbreak:hover   { border-left-color: #a855f7 !important; box-shadow: -3px 0 12px rgba(168,85,247,0.2); }
 
 .tweet-header {
-    display: flex; align-items: center; gap: 8px;
-    margin-bottom: 5px; flex-wrap: nowrap;
+    display: flex; align-items: center; gap: 6px;
+    margin-bottom: 5px; flex-wrap: wrap;
 }
 .category-badge {
     font-weight: 600; font-size: 0.65rem;
@@ -244,6 +244,27 @@ st.markdown("""
 div[data-testid="stInfo"] { background: #0d1a24 !important; border-color: #1a3a4a !important; }
 h3 { color: #c8d4e0 !important; font-size: 0.9rem !important; font-weight: 500 !important; letter-spacing: 0.05em !important; text-transform: uppercase !important; }
 </style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+    <style>
+    .block-container {
+        padding-top: 1.2rem !important;
+        padding-bottom: 1rem !important;
+        padding-left: 2rem !important;
+        padding-right: 2rem !important;
+    }
+    
+    .dashboard-title {
+        color: #66fcf1;
+        font-family: 'Inter', sans-serif;
+        font-weight: 600;
+        font-size: 1.6rem;
+        margin-bottom: 2px;
+        letter-spacing: -0.5px;
+        padding-top: 0.5rem;
+    }
+    </style>
 """, unsafe_allow_html=True)
 
 
@@ -377,7 +398,7 @@ with col_left:
         if alerts_list:
             center_lat = np.mean([a["lat"] for a in alerts_list])
             center_lon = np.mean([a["lon"] for a in alerts_list])
-            zoom = 4.0
+            zoom = 3.0
         else:
             center_lat, center_lon, zoom = 20.0, 10.0, 1.8
 
@@ -439,7 +460,7 @@ with col_left:
                 df_chart = pd.DataFrame(tweets_data)
                 if 'timestamp' in df_chart.columns and 'category' in df_chart.columns:
                     df_chart['datetime'] = pd.to_datetime(df_chart['timestamp'], unit='s')
-                    df_chart['time_bin'] = df_chart['datetime'].dt.floor('10s')
+                    df_chart['time_bin'] = df_chart['datetime'].dt.floor('10min')
                     grouped = df_chart.groupby(['time_bin','category']).size().unstack(fill_value=0).reset_index()
                     for c in CAT_COLORS:
                         if c not in grouped.columns: grouped[c] = 0
@@ -458,7 +479,7 @@ with col_left:
                             fill='tozeroy', fillcolor=hex_to_rgba(color, 0.08),
                             hovertemplate=f'<b>{cat}</b><br>%{{y}} posts<extra></extra>',
                         ))
-                    fig_line.update_layout(**base_layout, title=dict(text='Signal Volume (10s bins)', **title_style))
+                    fig_line.update_layout(**base_layout, title=dict(text='Signal Volume (10min bins)', **title_style))
                     st.plotly_chart(fig_line, use_container_width=True, theme=None)
             else:
                 st.info("Waiting for stream data...")
@@ -656,13 +677,13 @@ with col_right:
 
                 # SOURCE BADGE MATCHING MAP
                 if source == "gdelt":
-                    source_badge = "🌐 GDELT"
+                    source_badge = "🌐"
                     source_color_hex = "#66fcf1"
                 elif source == "openweathermap":
-                    source_badge = "🌤️ WEATHER"
+                    source_badge = "🌤️"
                     source_color_hex = "#3b82f6"
                 elif source == "newsapi":
-                    source_badge = "📰 NEWS"
+                    source_badge = "📰"
                     source_color_hex = "#a855f7"
                 else:
                     source_badge = "🤖 SIM"

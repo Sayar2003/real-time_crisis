@@ -233,16 +233,24 @@ async def get_tweets(
     limit: int = Query(50, ge=1, le=500),
     category: Optional[str] = None
 ):
-    """Returns recent crisis events, GDELT real events first."""
     all_events = list(tweets_db)
     if category:
         all_events = [t for t in all_events if t["category"].lower() == category.lower()]
 
     all_events = list(reversed(all_events))
 
+    # Deduplicate by text content
+    seen_texts = set()
+    deduped = []
+    for e in all_events:
+        text_key = e.get("text", "")[:100]  # first 100 chars as key
+        if text_key not in seen_texts:
+            seen_texts.add(text_key)
+            deduped.append(e)
+
     # GDELT real events first, then others
-    gdelt  = [t for t in all_events if t.get("source") == "gdelt"]
-    others = [t for t in all_events if t.get("source") != "gdelt"]
+    gdelt  = [t for t in deduped if t.get("source") == "gdelt"]
+    others = [t for t in deduped if t.get("source") != "gdelt"]
 
     return (gdelt + others)[:limit]
 
