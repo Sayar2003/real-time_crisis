@@ -101,6 +101,26 @@ v
 
 ---
 
+## 📸 Screenshots
+
+### Main Dashboard
+![Dashboard](docs/dashboard.png)
+
+### Global Crisis Heatmap
+![Map](docs/map.png)
+
+### Live Weather — Powered by Windy
+![Windy](docs/windy.png)
+
+### Live Signal Feed with Severity Scores
+![Feed](docs/feed.png)
+
+### Control Panel & Data Sources
+![Sidebar](docs/sidebar.png)
+
+### Real-Time Analytics
+![Charts](docs/charts.png)
+
 ## ✨ Key Features
 
 | Feature | Description |
