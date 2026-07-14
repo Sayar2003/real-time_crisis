@@ -429,7 +429,7 @@ with col_left:
         # ── Charts ────────────────────────────────────────────────────────────────
         st.write("")
         st.markdown("<div class='section-header'>📊 Real-Time Stream Analytics</div>", unsafe_allow_html=True)
-        c_chart1, c_chart2 = st.columns(2)
+        c_chart2 = st.container()
 
         base_layout = dict(
             paper_bgcolor='rgba(0,0,0,0)',
@@ -454,35 +454,6 @@ with col_left:
         )
 
         title_style = dict(font=dict(size=13, color='#c8d4e0', family='Inter, sans-serif'), x=0.02, y=0.97)
-
-        with c_chart1:
-            if len(tweets_data) > 0:
-                df_chart = pd.DataFrame(tweets_data)
-                if 'timestamp' in df_chart.columns and 'category' in df_chart.columns:
-                    df_chart['datetime'] = pd.to_datetime(df_chart['timestamp'], unit='s')
-                    df_chart['time_bin'] = df_chart['datetime'].dt.floor('10min')
-                    grouped = df_chart.groupby(['time_bin','category']).size().unstack(fill_value=0).reset_index()
-                    for c in CAT_COLORS:
-                        if c not in grouped.columns: grouped[c] = 0
-                    melted = grouped.melt(id_vars=['time_bin'], value_vars=list(CAT_COLORS.keys()),
-                                        var_name='Category', value_name='Volume')
-
-                    fig_line = go.Figure()
-                    for cat, color in CAT_COLORS.items():
-                        cat_data = melted[melted['Category'] == cat]
-                        if cat_data['Volume'].sum() == 0:
-                            continue
-                        fig_line.add_trace(go.Scatter(
-                            x=cat_data['time_bin'], y=cat_data['Volume'],
-                            name=cat, mode='lines',
-                            line=dict(color=color, width=2),
-                            fill='tozeroy', fillcolor=hex_to_rgba(color, 0.08),
-                            hovertemplate=f'<b>{cat}</b><br>%{{y}} posts<extra></extra>',
-                        ))
-                    fig_line.update_layout(**base_layout, title=dict(text='Signal Volume (10min bins)', **title_style))
-                    st.plotly_chart(fig_line, use_container_width=True, theme=None)
-            else:
-                st.info("Waiting for stream data...")
 
         with c_chart2:
             if len(tweets_data) > 0:
